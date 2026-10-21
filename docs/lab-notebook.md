@@ -7,3 +7,5 @@
 ## 2026-10-21: UDP echo tested on loopback and across two laptops over WiFi. Observed RTT range: 0.161 ms.
 
 ## 2026-10-21: UDP echo tested across two laptops over WiFi. Server received 4 of 5 pings. Replies to pings 1 and 2 arrived seconds late in a burst, so the echo client matched them to the wrong pings and printed false RTTs (304 ms, 0.161 ms). Lesson: unique packet numbers are needed so every ACK maps to exactly one transmission. Firewall rule for UDP 9000 worked.
+
+## 2026-10-21: Wrote packet_demo: encodes and decodes the 37-byte header, CRC32 detects a single flipped bit. Layout matches docs/design.md.
