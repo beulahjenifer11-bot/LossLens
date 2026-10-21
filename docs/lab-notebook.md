@@ -15,3 +15,5 @@
 ## 2026-10-21: Wrote file_sender and file_receiver: fixed window of 20 packets, SACK ACKs, FIN with total length. 1 MB random file transferred over loopback, SHA256 of sent and received files identical.
 
 ## 2026-10-21: Wrote file_sender and file_receiver: fixed window of 20 packets, SACK ACKs, FIN with total length. 1 MB random file sent over loopback in 0.600 s (13.98 Mbps), matches window x MSS / srtt. srtt 15.2 ms vs min RTT 5.58 ms is inflated by debug-build processing time, so final experiments must use cargo build --release.
+
+## 2026-10-21: Step 12 loss detection and retransmission: packet threshold 3, time threshold 9/8 RTT, timeout max(4 x srtt, 200 ms), new packet number per retransmission. Receiver has a temporary seeded random-drop switch that counts ground-truth drops. Results (fill in): 0% loss hash ___, 5% loss hash ___, dropped ___, losses declared ___, spurious ___, retransmission rate ___%.
