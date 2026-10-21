@@ -23,3 +23,5 @@
 ## 2026-10-21: Step 14 emulator v1: UDP relay on port 9100 with fixed one-way delay, seeded Bernoulli loss and ground-truth drop log (emulator_drops.csv). Found that loopback RTT is too small to show the loss penalty (222 Mbps at 10% loss), so realistic delay is required before Reno. Results (fill in): 0% loss goodput ___ Mbps, 5% loss goodput ___ Mbps, emulator dropped ___, sender declared ___ lost.
 
 ## 2026-10-21: Step 15 emulator v2 results. Test 1 (20 Mbps, buffer 80): goodput 4.62 Mbps, srtt 41.3 ms, min RTT 40.6 ms, 0 drops, max queue 19 (start-up burst of 20 packets). Test 2 (2 Mbps, buffer 10): goodput 1.90 Mbps, srtt 87.3 ms vs min RTT 45.5 ms, 49 QUEUE_OVERFLOW drops, 0 RANDOM, sender declared 49 lost, spurious 0, hash identical. Hypothesis confirmed.
+
+## 2026-10-21: Step 15 Test 3 (2 Mbps, buffer 10, 1% random loss): emulator dropped 12 RANDOM + 43 QUEUE_OVERFLOW, sender declared 55 lost, spurious 0, goodput 1.92 Mbps, srtt 89.4 ms vs min RTT 45.3 ms, hash identical. The sender detects every loss but cannot tell the cause: 22% of losses were random. This is the gap the LossLens classifier must close.
