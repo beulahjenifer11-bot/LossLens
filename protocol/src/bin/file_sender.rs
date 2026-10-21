@@ -1,22 +1,26 @@
 use std::collections::VecDeque;
 use std::fs;
+use std::io::Write;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 fn main() {
-    // Step 1: command line, file to send and optional receiver address
+    // Step 1: command line: file, receiver address, controller ("reno" or "fixed")
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: cargo run --bin file_sender -- <file> [receiver_addr]").clone();
+    let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|fixed]").clone();
     let server = args.get(2).cloned().unwrap_or("127.0.0.1:9001".to_string());
+    let cc = args.get(3).cloned().unwrap_or("reno".to_string());
+    if cc != "reno" && cc != "fixed" { panic!("controller must be reno or fixed"); }
     let data = fs::read(&path).expect("could not read file");
 
     // Step 2: settings. A "chunk" is one 1200-byte slice of the file; chunk number total_chunks stands for the FIN
     let mss: usize = 1200;
-    let window: usize = 20;
+    let mss_f: f64 = 1200.0;
+    let window: usize = 20; // only used by the "fixed" controller
     let conn_id: u32 = 0x1000_0001;
     let total_chunks = (data.len() + mss - 1) / mss;
     let fin_chunk = total_chunks;
-    println!("Sending {}: {} bytes = {} chunks + FIN, window {} packets", path, data.len(), total_chunks, window);
+    println!("Sending {}: {} bytes = {} chunks + FIN, controller {}", path, data.len(), total_chunks, cc);
 
     // Step 3: socket, waits at most 10 ms for each ACK so loss checks run often
     let socket = UdpSocket::bind("0.0.0.0:0").expect("bind failed");
@@ -50,16 +54,32 @@ fn main() {
         p
     };
 
-    // Step 5: sender state. The three pkt_ vectors are indexed by packet number
+    // Step 5: congestion control state
+    // cwnd = bytes allowed in flight, ssthresh = slow start threshold (infinite until the first loss)
+    let mut cwnd: f64 = if cc == "fixed" { window as f64 * mss_f } else { 10.0 * mss_f };
+    let mut ssthresh: f64 = f64::MAX;
+    // recovery_pn = packets numbered below this were sent before the last cut, so their losses do not cut again
+    let mut recovery_pn: usize = 0;
+    let mut reductions: u64 = 0;
+    let mut max_cwnd: f64 = cwnd;
+
+    // Step 6: log files for later analysis
+    let mut cwnd_log = fs::File::create("cwnd_log.csv").expect("cannot create cwnd_log.csv");
+    writeln!(cwnd_log, "time_ms,cwnd_bytes,ssthresh_bytes,in_flight_packets,srtt_ms").unwrap();
+    let mut loss_log = fs::File::create("sender_losses.csv").expect("cannot create sender_losses.csv");
+    writeln!(loss_log, "packet_number,time_ms,rule").unwrap();
+    let mut last_log = Instant::now();
+
+    // Step 7: sender state. The pkt_ vectors are indexed by packet number
     let clock = Instant::now();
     let mut pkt_chunk: Vec<usize> = Vec::new();      // which chunk this packet carried
     let mut pkt_time: Vec<Instant> = Vec::new();     // when it was sent
     let mut pkt_state: Vec<u8> = Vec::new();         // 0 = in flight, 1 = acked, 2 = declared lost
     let mut chunk_acked = vec![false; total_chunks + 1];
     let mut chunks_acked_count: usize = 0;
-    let mut next_new: usize = 0;                     // next chunk never sent before
+    let mut next_new: usize = 0;
     let mut fin_sent = false;
-    let mut retx_queue: VecDeque<usize> = VecDeque::new(); // chunks waiting to be sent again
+    let mut retx_queue: VecDeque<usize> = VecDeque::new();
     let mut in_flight: usize = 0;
     let mut largest_acked: i64 = -1;
     let mut srtt: f64 = 0.0;
@@ -69,21 +89,23 @@ fn main() {
     let mut sent_total: u64 = 0;
     let mut retx_total: u64 = 0;
     let mut lost_declared: u64 = 0;
-    let mut spurious: u64 = 0;   // declared lost, but the packet arrived after all
+    let mut spurious: u64 = 0;
     let mut ce_echoed: u32 = 0;
-    let mut last_ack_time = Instant::now(); // for the timeout rule
-    let mut last_rx = Instant::now();       // for giving up
+    let mut last_ack_time = Instant::now();
+    let mut last_rx = Instant::now();
     let mut buf = [0u8; 2000];
 
-    // Step 6: main loop, runs until every chunk and the FIN are acknowledged
+    // Step 8: main loop, runs until every chunk and the FIN are acknowledged
     while chunks_acked_count < total_chunks + 1 {
 
-        // Step 6a: send while the window has room. Retransmissions go first, then new data, then the FIN
-        while in_flight < window {
+        // Step 8a: send while the window has room (fixed: 20 packets, reno: (in flight + 1) packets must fit in cwnd)
+        loop {
+            let allowed = if cc == "fixed" { in_flight < window } else { (in_flight as f64 + 1.0) * mss_f <= cwnd };
+            if !allowed { break; }
             let mut is_retx = false;
             let mut chunk: Option<usize> = None;
             while let Some(c) = retx_queue.pop_front() {
-                if !chunk_acked[c] { chunk = Some(c); is_retx = true; break; } // skip chunks acked in the meantime
+                if !chunk_acked[c] { chunk = Some(c); is_retx = true; break; }
             }
             if chunk.is_none() {
                 if next_new < total_chunks { chunk = Some(next_new); next_new += 1; }
@@ -108,7 +130,7 @@ fn main() {
             if is_retx { retx_total += 1; }
         }
 
-        // Step 6b: wait up to 10 ms for an ACK, keep its frame only if the CRC is good
+        // Step 8b: wait up to 10 ms for an ACK, keep its frame only if the CRC is good
         let mut frame_opt: Option<Vec<u8>> = None;
         if let Ok((len, _)) = socket.recv_from(&mut buf) {
             if len >= 37 + 18 && buf[1] == 1 {
@@ -122,7 +144,7 @@ fn main() {
             }
         }
 
-        // Step 6c: process a valid ACK frame
+        // Step 8c: process a valid ACK frame
         if let Some(frame) = frame_opt {
             last_ack_time = Instant::now();
             last_rx = Instant::now();
@@ -140,14 +162,25 @@ fn main() {
                 let e = u64::from_be_bytes(frame[o + 8..o + 16].try_into().unwrap());
                 for pn in s..=e {
                     let p = pn as usize;
-                    if p >= pkt_state.len() || pkt_state[p] == 1 { continue; } // unknown or already acked
+                    if p >= pkt_state.len() || pkt_state[p] == 1 { continue; }
                     let was = pkt_state[p];
                     pkt_state[p] = 1;
-                    if was == 0 { in_flight -= 1; }   // it was still in flight
-                    if was == 2 { spurious += 1; }    // we had declared it lost, it arrived anyway
+                    if was == 0 { in_flight -= 1; }
+                    if was == 2 { spurious += 1; }
                     let c = pkt_chunk[p];
                     if !chunk_acked[c] { chunk_acked[c] = true; chunks_acked_count += 1; }
-                    // RTT sample from the largest acknowledged packet
+
+                    // Step 8d: Reno growth, only for a packet that was in flight and was sent after the last cut
+                    if cc == "reno" && was == 0 && p >= recovery_pn {
+                        if cwnd < ssthresh {
+                            cwnd += mss_f;                   // slow start: +1 packet per ACK, doubles every RTT
+                        } else {
+                            cwnd += mss_f * mss_f / cwnd;    // congestion avoidance: about +1 packet per RTT
+                        }
+                        if cwnd > max_cwnd { max_cwnd = cwnd; }
+                    }
+
+                    // Step 8e: RTT sample from the largest acknowledged packet
                     if pn == largest {
                         let rtt = pkt_time[p].elapsed().as_secs_f64() * 1000.0 - delay_us as f64 / 1000.0;
                         latest_rtt = rtt;
@@ -158,33 +191,53 @@ fn main() {
             }
         }
 
-        // Step 6d: loss detection over every packet still in flight
+        // Step 8f: loss detection over every packet still in flight
         let time_thresh_ms = if have_rtt { 1.125 * srtt.max(latest_rtt) } else { 500.0 };
         let rto_ms = if have_rtt { (4.0 * srtt).max(200.0) } else { 1000.0 };
         let timed_out = in_flight > 0 && last_ack_time.elapsed().as_secs_f64() * 1000.0 > rto_ms;
         for p in 0..pkt_state.len() {
             if pkt_state[p] != 0 { continue; }
             let age_ms = pkt_time[p].elapsed().as_secs_f64() * 1000.0;
-            let by_packets = largest_acked >= p as i64 + 3;                      // rule 1: packet threshold
-            let by_time = largest_acked > p as i64 && age_ms > time_thresh_ms;   // rule 2: time threshold
-            let by_timeout = timed_out && age_ms > rto_ms;                       // rule 3: timeout
+            let by_packets = largest_acked >= p as i64 + 3;
+            let by_time = largest_acked > p as i64 && age_ms > time_thresh_ms;
+            let by_timeout = timed_out && age_ms > rto_ms;
             if by_packets || by_time || by_timeout {
                 pkt_state[p] = 2;
                 in_flight -= 1;
                 lost_declared += 1;
                 if !chunk_acked[pkt_chunk[p]] { retx_queue.push_back(pkt_chunk[p]); }
+
+                // Step 8g: write the declaration to the loss log (joined with emulator_drops.csv later)
+                let rule = if by_packets { "packets" } else if by_time { "time" } else { "timeout" };
+                writeln!(loss_log, "{},{:.1},{}", p, clock.elapsed().as_secs_f64() * 1000.0, rule).unwrap();
+
+                // Step 8h: Reno reaction, a loss starts a new event only if the packet was sent after the last cut
+                if cc == "reno" && p >= recovery_pn {
+                    ssthresh = (cwnd / 2.0).max(2.0 * mss_f);                       // halve
+                    cwnd = if by_timeout && !by_packets && !by_time { 2.0 * mss_f } // timeout: back to 2 packets
+                           else { ssthresh };                                       // normal loss: cwnd = half
+                    recovery_pn = pkt_state.len();  // every packet sent from now on belongs to the new epoch
+                    reductions += 1;
+                }
             }
         }
-        if timed_out { last_ack_time = Instant::now(); } // wait one more timeout period before the next round
+        if timed_out { last_ack_time = Instant::now(); }
 
-        // Step 6e: give up if nothing valid has arrived for 10 seconds
+        // Step 8i: write one row to the cwnd log every 5 ms
+        if last_log.elapsed() >= Duration::from_millis(5) {
+            let ss = if ssthresh > 1e12 { -1.0 } else { ssthresh };
+            writeln!(cwnd_log, "{:.1},{:.0},{:.0},{},{:.2}", clock.elapsed().as_secs_f64() * 1000.0, cwnd, ss, in_flight, srtt).unwrap();
+            last_log = Instant::now();
+        }
+
+        // Step 8j: give up if nothing valid has arrived for 10 seconds
         if last_rx.elapsed().as_secs() >= 10 {
             println!("Stalled: no ACKs for 10 s. Is the receiver running? ({} of {} acked)", chunks_acked_count, total_chunks + 1);
             break;
         }
     }
 
-    // Step 7: report
+    // Step 9: report
     let secs = clock.elapsed().as_secs_f64();
     println!("Done: {} bytes in {:.3} s, goodput {:.2} Mbps", data.len(), secs, data.len() as f64 * 8.0 / secs / 1e6);
     if have_rtt {
@@ -192,4 +245,6 @@ fn main() {
     }
     println!("Packets sent {}, retransmissions {} ({:.2}%), losses declared {}, spurious {}",
         sent_total, retx_total, retx_total as f64 * 100.0 / sent_total as f64, lost_declared, spurious);
+    println!("Controller {}: cwnd reductions {}, max cwnd {:.1} packets, final cwnd {:.1} packets",
+        cc, reductions, max_cwnd / mss_f, cwnd / mss_f);
 }

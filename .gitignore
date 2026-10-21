@@ -5,3 +5,5 @@ __pycache__/
 results/
 *.bin
 emulator_drops.csv
+cwnd_log.csv
+sender_losses.csv
