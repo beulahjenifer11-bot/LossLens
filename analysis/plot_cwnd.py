@@ -12,7 +12,8 @@ def main():
     mss = 1200
     runs = [
         ("testA_reno", "Test A: Reno, 2 Mbps link, 10-packet buffer, no random loss"),
-        ("testB_reno", "Test B: Reno, 20 Mbps link, 1% random loss"),
+                ("testB_reno", "Test B: Reno, 20 Mbps link, 1% random loss"),
+        ("testA_cubic", "Test A: CUBIC, 2 Mbps link, 10-packet buffer, no random loss"),
     ]
     os.makedirs("docs/figures", exist_ok=True)
 

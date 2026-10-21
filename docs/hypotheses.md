@@ -33,3 +33,9 @@ Prediction 1 supported: Reno at 1 percent loss reached 2.82 Mbps (95 percent CI 
 Prediction 2 mostly supported: the fixed window stayed between 4.37 and 4.66 Mbps at all loss rates, and Reno won at 0 and 0.1 percent (18.26 and 10.97 Mbps against 4.65 and 4.66). The crossover is earlier than predicted: at 0.5 percent the fixed window was already ahead (4.64 against 4.24, intervals do not overlap), so it lies between 0.1 and 0.5 percent, not at 1 percent.
 Prediction 3: spurious losses were 0.00 in all 12 settings (n=10 each). Hash and drop count checks to be confirmed from the script output.
 Unexpected finding: Reno retransmitted 3.58 percent of packets at 0 percent random loss and 3.00 percent at 0.1 percent, so at low random loss most of its losses are congestion drops from slow start overshoot (no pacing yet). The fixed window retransmission rate matched the random loss rate (0.10, 0.53, 1.07, 2.05, 5.11 percent) because 20 packets never overflow the buffer.
+
+## Step 22 (CUBIC), written before running
+Test A: 2 Mbps, 20 ms one-way, buffer 10, no random loss, 1 MB file, cubic.
+Prediction 1: cwnd falls to about 70 percent of its peak (about 14 to 15 packets from a peak near 21), which is above the pipe size of about 9.4 packets, so the buffer never fully drains. srtt should therefore be about 70 to 90 ms against a min RTT near 45 ms, and goodput should stay near 1.9 Mbps.
+Prediction 2: at this small bandwidth delay product the sender runs in the TCP-friendly region, so the cwnd plot looks like a shallower sawtooth with a roughly straight ramp, not the cubic curve. The cubic shape only shows at large bandwidth delay products.
+Prediction 3 (checked in the next step with the full runner): at 1 percent random loss, cubic goodput is within 20 percent of Reno (2.3 to 3.4 Mbps), because the TCP-friendly region is designed to match Reno at small windows.

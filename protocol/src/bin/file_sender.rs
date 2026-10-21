@@ -5,12 +5,12 @@ use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 fn main() {
-    // Step 1: command line: file, receiver address, controller ("reno" or "fixed")
+    // Step 1: command line: file, receiver address, controller ("reno", "cubic" or "fixed")
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|fixed]").clone();
+    let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|cubic|fixed]").clone();
     let server = args.get(2).cloned().unwrap_or("127.0.0.1:9001".to_string());
     let cc = args.get(3).cloned().unwrap_or("reno".to_string());
-    if cc != "reno" && cc != "fixed" { panic!("controller must be reno or fixed"); }
+    if cc != "reno" && cc != "cubic" && cc != "fixed" { panic!("controller must be reno, cubic or fixed"); }
     let data = fs::read(&path).expect("could not read file");
 
     // Step 2: settings. A "chunk" is one 1200-byte slice of the file; chunk number total_chunks stands for the FIN
@@ -62,6 +62,11 @@ fn main() {
     let mut recovery_pn: usize = 0;
     let mut reductions: u64 = 0;
     let mut max_cwnd: f64 = cwnd;
+    // CUBIC only, all window sizes below are in packets
+    let mut w_max: f64 = 0.0;                    // window size just before the last cut (the old peak)
+    let mut epoch_start: Option<Instant> = None; // when the current cubic growth phase began
+    let mut cubic_k: f64 = 0.0;                  // seconds the curve needs to climb back to w_max
+    let mut w_est: f64 = 0.0;                    // what a Reno-like sender (beta 0.7) would have reached
 
     // Step 6: log files for later analysis
     let mut cwnd_log = fs::File::create("cwnd_log.csv").expect("cannot create cwnd_log.csv");
@@ -98,7 +103,7 @@ fn main() {
     // Step 8: main loop, runs until every chunk and the FIN are acknowledged
     while chunks_acked_count < total_chunks + 1 {
 
-        // Step 8a: send while the window has room (fixed: 20 packets, reno: (in flight + 1) packets must fit in cwnd)
+        // Step 8a: send while the window has room (fixed: 20 packets, reno and cubic: (in flight + 1) packets must fit in cwnd)
         loop {
             let allowed = if cc == "fixed" { in_flight < window } else { (in_flight as f64 + 1.0) * mss_f <= cwnd };
             if !allowed { break; }
@@ -170,12 +175,28 @@ fn main() {
                     let c = pkt_chunk[p];
                     if !chunk_acked[c] { chunk_acked[c] = true; chunks_acked_count += 1; }
 
-                    // Step 8d: Reno growth, only for a packet that was in flight and was sent after the last cut
-                    if cc == "reno" && was == 0 && p >= recovery_pn {
+                    // Step 8d: window growth, only for a packet that was in flight and was sent after the last cut
+                    if (cc == "reno" || cc == "cubic") && was == 0 && p >= recovery_pn {
                         if cwnd < ssthresh {
-                            cwnd += mss_f;                   // slow start: +1 packet per ACK, doubles every RTT
+                            cwnd += mss_f;                          // slow start (both controllers): +1 packet per ACK
+                        } else if cc == "reno" {
+                            cwnd += mss_f * mss_f / cwnd;           // Reno congestion avoidance: about +1 packet per RTT
                         } else {
-                            cwnd += mss_f * mss_f / cwnd;    // congestion avoidance: about +1 packet per RTT
+                            // CUBIC congestion avoidance (RFC 9438 style)
+                            let cw = cwnd / mss_f;                  // current window in packets
+                            if epoch_start.is_none() {
+                                // first ACK after a cut (or after slow start): start a new cubic epoch
+                                epoch_start = Some(Instant::now());
+                                if w_max < cw { w_max = cw; }                      // no earlier peak: the curve starts at its flat part
+                                cubic_k = ((w_max - cw) / 0.4).max(0.0).cbrt();    // seconds until the curve is back at w_max
+                                w_est = cw;
+                            }
+                            let t = epoch_start.unwrap().elapsed().as_secs_f64() + srtt / 1000.0; // time in epoch plus one RTT
+                            let w_cubic = 0.4 * (t - cubic_k).powi(3) + w_max;     // the cubic curve
+                            w_est += 0.5294 / cw;                                  // Reno-like growth for beta 0.7
+                            let target = w_cubic.max(w_est).min(1.5 * cw);         // follow the higher curve, at most +50 percent per RTT
+                            let inc = if target > cw { (target - cw) / cw } else { 0.01 / cw };
+                            cwnd += inc * mss_f;                                   // this ACK's share of the growth
                         }
                         if cwnd > max_cwnd { max_cwnd = cwnd; }
                     }
@@ -211,11 +232,18 @@ fn main() {
                 let rule = if by_packets { "packets" } else if by_time { "time" } else { "timeout" };
                 writeln!(loss_log, "{},{:.1},{}", p, clock.elapsed().as_secs_f64() * 1000.0, rule).unwrap();
 
-                // Step 8h: Reno reaction, a loss starts a new event only if the packet was sent after the last cut
-                if cc == "reno" && p >= recovery_pn {
-                    ssthresh = (cwnd / 2.0).max(2.0 * mss_f);                       // halve
+                // Step 8h: reaction, a loss starts a new event only if the packet was sent after the last cut
+                if (cc == "reno" || cc == "cubic") && p >= recovery_pn {
+                    let beta = if cc == "cubic" { 0.7 } else { 0.5 };   // fraction of cwnd kept after a loss
+                    if cc == "cubic" {
+                        let cw = cwnd / mss_f;
+                        // fast convergence: a lower peak than last time means a competing flow is growing, so give it room
+                        w_max = if cw < w_max { cw * (1.0 + 0.7) / 2.0 } else { cw };
+                        epoch_start = None;                             // the next ACK starts a new cubic epoch
+                    }
+                    ssthresh = (cwnd * beta).max(2.0 * mss_f);
                     cwnd = if by_timeout && !by_packets && !by_time { 2.0 * mss_f } // timeout: back to 2 packets
-                           else { ssthresh };                                       // normal loss: cwnd = half
+                           else { ssthresh };                                       // normal loss: keep beta of cwnd
                     recovery_pn = pkt_state.len();  // every packet sent from now on belongs to the new epoch
                     reductions += 1;
                 }
