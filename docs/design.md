@@ -62,3 +62,5 @@ Outputs:
 - Clock and network I/O are kept separate from protocol logic so a simulator can replace them later
 - Header uses a CE flag in our own header because real IP-ECN bits are unreliable on Windows sockets (documented limitation)
 - Encryption is out of scope (Stretch)
+## 8. ACK frame wire layout (final)
+largest acked 8 B, ack delay 4 B (microseconds), CE counter 4 B, range count 2 B, then 16 B per SACK range (start 8 B, end 8 B). All big-endian.
