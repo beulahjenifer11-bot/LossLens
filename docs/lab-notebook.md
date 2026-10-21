@@ -21,3 +21,5 @@
 ## 2026-10-21: Step 13 repeatability test (experiments/verify_transfer.ps1): 4 loss rates x 3 seeds = 12 transfers of a 1 MB file, hash checked each time. Result: ___ passed, ___ failed. Goodput at 0% = ___ Mbps, at 10% = ___ Mbps.
 
 ## 2026-10-21: Step 14 emulator v1: UDP relay on port 9100 with fixed one-way delay, seeded Bernoulli loss and ground-truth drop log (emulator_drops.csv). Found that loopback RTT is too small to show the loss penalty (222 Mbps at 10% loss), so realistic delay is required before Reno. Results (fill in): 0% loss goodput ___ Mbps, 5% loss goodput ___ Mbps, emulator dropped ___, sender declared ___ lost.
+
+## 2026-10-21: Step 15 emulator v2 results. Test 1 (20 Mbps, buffer 80): goodput 4.62 Mbps, srtt 41.3 ms, min RTT 40.6 ms, 0 drops, max queue 19 (start-up burst of 20 packets). Test 2 (2 Mbps, buffer 10): goodput 1.90 Mbps, srtt 87.3 ms vs min RTT 45.5 ms, 49 QUEUE_OVERFLOW drops, 0 RANDOM, sender declared 49 lost, spurious 0, hash identical. Hypothesis confirmed.
