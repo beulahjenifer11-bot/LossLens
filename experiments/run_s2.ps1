@@ -1,4 +1,4 @@
-param([int]$Seeds = 3, [int]$FileMB = 5)
+param([int]$Seeds = 3, [int]$FileMB = 5, [int]$SeedStart = 1, [string]$Tag = "runs")
 
 # Step 1: stop leftovers, move to the project root, build the release programs
 Get-Process emulator, file_receiver, file_sender -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -16,7 +16,7 @@ $testFile = Join-Path $scratch "test.bin"
 $recvFile = Join-Path $scratch "received.bin"
 $recvLog = Join-Path $scratch "recv_out.txt"
 $emuLog = Join-Path $scratch "emu_out.txt"
-$csv = Join-Path $root "results\mvp_s2_runs.csv"
+$csv = Join-Path $root "results\mvp_s2_$Tag.csv"
 
 # Step 3: create the random test file (seeded, so it is the same every time) and remember its hash
 $size = $FileMB * 1048576
@@ -36,7 +36,7 @@ $clock = [Diagnostics.Stopwatch]::StartNew()
 
 foreach ($cc in "reno", "fixed") {
     foreach ($loss in $lossList) {
-        foreach ($seed in 1..$Seeds) {
+        foreach ($seed in $SeedStart..($SeedStart + $Seeds - 1)) {
             $n++
 
             # Step 5a: start the receiver and the emulator in the background (emulator args: loss, delay ms, seed, Mbps, buffer)

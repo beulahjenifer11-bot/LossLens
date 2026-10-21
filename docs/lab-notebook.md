@@ -35,3 +35,5 @@
 ## 2026-10-21: Step 18 experiment runner experiments/run_s2.ps1. Method decision: the 1 MB file is too short at 20 Mbps (0.4 s ideal, dominated by slow start), so experiments use a 5 MB file. Grid: reno and fixed x loss 0, 0.1, 0.5, 1, 2, 5 percent x seeds, 20 Mbps, 40 ms RTT, buffer 80. Pilot with 2 seeds finished, all hashes identical (fill in), results in results/mvp_s2_runs.csv.
 
 ## 2026-10-21: Step 18 pilot (2 seeds, 24 runs, 6.3 min): all 12 settings returned identical hashes. Fixed window reached 4.27 Mbps at 5 percent loss (seed 2), so loss barely affects it, as predicted. Step 19: analysis/plot_goodput.py computes mean goodput with 95 percent bootstrap CIs (10000 resamples), compares Reno with the Mathis estimate and prints a verdict per written prediction. Tested on the pilot data before the full 10-seed run.
+
+## 2026-10-21: Step 20 full S2 run: 120 runs (reno and fixed x 6 loss rates x seeds 1 to 10) finished with all hashes reported true on the last runs. The run took 276.7 minutes against a prediction of about 30 minutes from the pilot. Cause being checked (idle time outside transfers versus slow transfers).
