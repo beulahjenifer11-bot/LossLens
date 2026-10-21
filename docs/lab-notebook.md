@@ -19,3 +19,5 @@
 ## 2026-10-21: Step 12 loss detection and retransmission: packet threshold 3, time threshold 9/8 RTT, timeout max(4 x srtt, 200 ms), new packet number per retransmission. Receiver has a temporary seeded random-drop switch that counts ground-truth drops. Results (fill in): 0% loss hash ___, 5% loss hash ___, dropped ___, losses declared ___, spurious ___, retransmission rate ___%.
 
 ## 2026-10-21: Step 13 repeatability test (experiments/verify_transfer.ps1): 4 loss rates x 3 seeds = 12 transfers of a 1 MB file, hash checked each time. Result: ___ passed, ___ failed. Goodput at 0% = ___ Mbps, at 10% = ___ Mbps.
+
+## 2026-10-21: Step 14 emulator v1: UDP relay on port 9100 with fixed one-way delay, seeded Bernoulli loss and ground-truth drop log (emulator_drops.csv). Found that loopback RTT is too small to show the loss penalty (222 Mbps at 10% loss), so realistic delay is required before Reno. Results (fill in): 0% loss goodput ___ Mbps, 5% loss goodput ___ Mbps, emulator dropped ___, sender declared ___ lost.
