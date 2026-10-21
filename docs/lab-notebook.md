@@ -13,3 +13,5 @@
 ## 2026-10-21: Wrote ack_demo: SACK ranges built from received packets, encoded to 66 bytes, decoded, packet threshold marks packet 4 lost while 7 and 8 stay pending.
 
 ## 2026-10-21: Wrote file_sender and file_receiver: fixed window of 20 packets, SACK ACKs, FIN with total length. 1 MB random file transferred over loopback, SHA256 of sent and received files identical.
+
+## 2026-10-21: Wrote file_sender and file_receiver: fixed window of 20 packets, SACK ACKs, FIN with total length. 1 MB random file sent over loopback in 0.600 s (13.98 Mbps), matches window x MSS / srtt. srtt 15.2 ms vs min RTT 5.58 ms is inflated by debug-build processing time, so final experiments must use cargo build --release.
