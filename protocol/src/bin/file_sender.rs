@@ -5,12 +5,14 @@ use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 fn main() {
-    // Step 1: command line: file, receiver address, controller ("reno", "cubic" or "fixed")
+    // Step 1: command line: file, receiver address, controller, then the two classifier thresholds
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|cubic|fixed]").clone();
+    let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|cubic|fixed|losslens] [q_frac] [slope_thr_ms]").clone();
     let server = args.get(2).cloned().unwrap_or("127.0.0.1:9001".to_string());
     let cc = args.get(3).cloned().unwrap_or("reno".to_string());
-    if cc != "reno" && cc != "cubic" && cc != "fixed" { panic!("controller must be reno, cubic or fixed"); }
+    if cc != "reno" && cc != "cubic" && cc != "fixed" && cc != "losslens" { panic!("controller must be reno, cubic, fixed or losslens"); }
+    let q_frac: f64 = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(0.1);        // queueing delay must exceed q_frac x minRTT
+    let slope_thr_ms: f64 = args.get(5).map(|s| s.parse().unwrap()).unwrap_or(1.0);  // and must have risen by this many ms over the last RTT
     let data = fs::read(&path).expect("could not read file");
 
     // Step 2: settings. A "chunk" is one 1200-byte slice of the file; chunk number total_chunks stands for the FIN
@@ -63,16 +65,25 @@ fn main() {
     let mut reductions: u64 = 0;
     let mut max_cwnd: f64 = cwnd;
     // CUBIC only, all window sizes below are in packets
-    let mut w_max: f64 = 0.0;                    // window size just before the last cut (the old peak)
-    let mut epoch_start: Option<Instant> = None; // when the current cubic growth phase began
-    let mut cubic_k: f64 = 0.0;                  // seconds the curve needs to climb back to w_max
-    let mut w_est: f64 = 0.0;                    // what a Reno-like sender (beta 0.7) would have reached
+    let mut w_max: f64 = 0.0;
+    let mut epoch_start: Option<Instant> = None;
+    let mut cubic_k: f64 = 0.0;
+    let mut w_est: f64 = 0.0;
+    // Classifier state (the verdict is computed for every controller, only LossLens acts on it)
+    let mut ll_q_hist: Vec<(f64, f64)> = Vec::new(); // (time in ms, queueing delay in ms), sampled every 5 ms
+    let mut rand_streak: u32 = 0;                    // consecutive RANDOM verdicts that led to a cut
+    let mut streak_q0: f64 = 0.0;                    // queueing delay when the streak began
+    let mut v_cong: u64 = 0;                         // declared losses given the verdict CONGESTION
+    let mut v_rand: u64 = 0;                         // declared losses given the verdict RANDOM
+    let mut ev_cong: u64 = 0;                        // LossLens cuts decided as congestion
+    let mut ev_rand: u64 = 0;                        // LossLens cuts decided as random
+    let mut ll_safety: u64 = 0;                      // times the safety net forced a congestion cut
 
     // Step 6: log files for later analysis
     let mut cwnd_log = fs::File::create("cwnd_log.csv").expect("cannot create cwnd_log.csv");
     writeln!(cwnd_log, "time_ms,cwnd_bytes,ssthresh_bytes,in_flight_packets,srtt_ms").unwrap();
     let mut loss_log = fs::File::create("sender_losses.csv").expect("cannot create sender_losses.csv");
-    writeln!(loss_log, "packet_number,time_ms,rule").unwrap();
+    writeln!(loss_log, "packet_number,time_ms,rule,verdict,q_ms,rise_ms").unwrap();
     let mut last_log = Instant::now();
 
     // Step 7: sender state. The pkt_ vectors are indexed by packet number
@@ -103,7 +114,7 @@ fn main() {
     // Step 8: main loop, runs until every chunk and the FIN are acknowledged
     while chunks_acked_count < total_chunks + 1 {
 
-        // Step 8a: send while the window has room (fixed: 20 packets, reno and cubic: (in flight + 1) packets must fit in cwnd)
+        // Step 8a: send while the window has room (fixed: 20 packets, the others: (in flight + 1) packets must fit in cwnd)
         loop {
             let allowed = if cc == "fixed" { in_flight < window } else { (in_flight as f64 + 1.0) * mss_f <= cwnd };
             if !allowed { break; }
@@ -176,27 +187,26 @@ fn main() {
                     if !chunk_acked[c] { chunk_acked[c] = true; chunks_acked_count += 1; }
 
                     // Step 8d: window growth, only for a packet that was in flight and was sent after the last cut
-                    if (cc == "reno" || cc == "cubic") && was == 0 && p >= recovery_pn {
+                    if (cc == "reno" || cc == "cubic" || cc == "losslens") && was == 0 && p >= recovery_pn {
                         if cwnd < ssthresh {
-                            cwnd += mss_f;                          // slow start (both controllers): +1 packet per ACK
-                        } else if cc == "reno" {
-                            cwnd += mss_f * mss_f / cwnd;           // Reno congestion avoidance: about +1 packet per RTT
-                        } else {
+                            cwnd += mss_f;                          // slow start (all controllers): +1 packet per ACK
+                        } else if cc == "cubic" {
                             // CUBIC congestion avoidance (RFC 9438 style)
-                            let cw = cwnd / mss_f;                  // current window in packets
+                            let cw = cwnd / mss_f;
                             if epoch_start.is_none() {
-                                // first ACK after a cut (or after slow start): start a new cubic epoch
                                 epoch_start = Some(Instant::now());
-                                if w_max < cw { w_max = cw; }                      // no earlier peak: the curve starts at its flat part
-                                cubic_k = ((w_max - cw) / 0.4).max(0.0).cbrt();    // seconds until the curve is back at w_max
+                                if w_max < cw { w_max = cw; }
+                                cubic_k = ((w_max - cw) / 0.4).max(0.0).cbrt();
                                 w_est = cw;
                             }
-                            let t = epoch_start.unwrap().elapsed().as_secs_f64() + srtt / 1000.0; // time in epoch plus one RTT
-                            let w_cubic = 0.4 * (t - cubic_k).powi(3) + w_max;     // the cubic curve
-                            w_est += 0.5294 / cw;                                  // Reno-like growth for beta 0.7
-                            let target = w_cubic.max(w_est).min(1.5 * cw);         // follow the higher curve, at most +50 percent per RTT
+                            let t = epoch_start.unwrap().elapsed().as_secs_f64() + srtt / 1000.0;
+                            let w_cubic = 0.4 * (t - cubic_k).powi(3) + w_max;
+                            w_est += 0.5294 / cw;
+                            let target = w_cubic.max(w_est).min(1.5 * cw);
                             let inc = if target > cw { (target - cw) / cw } else { 0.01 / cw };
-                            cwnd += inc * mss_f;                                   // this ACK's share of the growth
+                            cwnd += inc * mss_f;
+                        } else {
+                            cwnd += mss_f * mss_f / cwnd;           // Reno and LossLens congestion avoidance: about +1 packet per RTT
                         }
                         if cwnd > max_cwnd { max_cwnd = cwnd; }
                     }
@@ -227,38 +237,76 @@ fn main() {
                 in_flight -= 1;
                 lost_declared += 1;
                 if !chunk_acked[pkt_chunk[p]] { retx_queue.push_back(pkt_chunk[p]); }
+                let timeout_only = by_timeout && !by_packets && !by_time;
 
-                // Step 8g: write the declaration to the loss log (joined with emulator_drops.csv later)
+                // Step 8g: the classifier, read the two signals at the moment of the declaration
+                // q_now = queueing delay now, q_old = queueing delay about one RTT ago, rise = how much it grew
+                let q_now = if have_rtt { (srtt - min_rtt).max(0.0) } else { 0.0 };
+                let now_ms = clock.elapsed().as_secs_f64() * 1000.0;
+                let mut q_old = q_now;
+                for &(t, q) in ll_q_hist.iter().rev() {
+                    if t <= now_ms - srtt { q_old = q; break; }  // newest sample that is at least one RTT old
+                }
+                let rise = q_now - q_old;
+                let verdict_cong = have_rtt && q_now > q_frac * min_rtt && rise >= slope_thr_ms;
+                if verdict_cong { v_cong += 1; } else { v_rand += 1; }
                 let rule = if by_packets { "packets" } else if by_time { "time" } else { "timeout" };
-                writeln!(loss_log, "{},{:.1},{}", p, clock.elapsed().as_secs_f64() * 1000.0, rule).unwrap();
+                writeln!(loss_log, "{},{:.1},{},{},{:.2},{:.2}", p, now_ms, rule, if verdict_cong { "CONGESTION" } else { "RANDOM" }, q_now, rise).unwrap();
 
-                // Step 8h: reaction, a loss starts a new event only if the packet was sent after the last cut
+                // Step 8h: Reno and CUBIC reaction, a loss starts a new event only if the packet was sent after the last cut
                 if (cc == "reno" || cc == "cubic") && p >= recovery_pn {
                     let beta = if cc == "cubic" { 0.7 } else { 0.5 };   // fraction of cwnd kept after a loss
                     if cc == "cubic" {
                         let cw = cwnd / mss_f;
-                        // fast convergence: a lower peak than last time means a competing flow is growing, so give it room
                         w_max = if cw < w_max { cw * (1.0 + 0.7) / 2.0 } else { cw };
-                        epoch_start = None;                             // the next ACK starts a new cubic epoch
+                        epoch_start = None;
                     }
                     ssthresh = (cwnd * beta).max(2.0 * mss_f);
-                    cwnd = if by_timeout && !by_packets && !by_time { 2.0 * mss_f } // timeout: back to 2 packets
-                           else { ssthresh };                                       // normal loss: keep beta of cwnd
-                    recovery_pn = pkt_state.len();  // every packet sent from now on belongs to the new epoch
+                    cwnd = if timeout_only { 2.0 * mss_f } else { ssthresh };
+                    recovery_pn = pkt_state.len();
+                    reductions += 1;
+                }
+
+                // Step 8i: LossLens reaction, same once-per-RTT rule, but the cut depends on the verdict
+                if cc == "losslens" && p >= recovery_pn {
+                    let mut cong = verdict_cong || timeout_only;       // a timeout is always treated as congestion
+                    if cong {
+                        rand_streak = 0;
+                    } else {
+                        rand_streak += 1;
+                        if rand_streak == 1 { streak_q0 = q_now; }
+                        if rand_streak >= 3 && q_now > streak_q0 + slope_thr_ms {
+                            cong = true;                               // safety net: 3 RANDOM verdicts in a row while the delay keeps climbing
+                            ll_safety += 1;
+                            rand_streak = 0;
+                        }
+                    }
+                    if cong {
+                        ssthresh = (cwnd * 0.7).max(2.0 * mss_f);
+                        cwnd = if timeout_only { 2.0 * mss_f } else { ssthresh };
+                        ev_cong += 1;
+                    } else {
+                        cwnd = (cwnd * 0.9).max(2.0 * mss_f);          // mild cut, ssthresh untouched so slow start can continue
+                        ev_rand += 1;
+                    }
+                    recovery_pn = pkt_state.len();
                     reductions += 1;
                 }
             }
         }
         if timed_out { last_ack_time = Instant::now(); }
 
-        // Step 8i: write one row to the cwnd log every 5 ms
+        // Step 8j: every 5 ms write one cwnd log row and remember the queueing delay for the classifier
         if last_log.elapsed() >= Duration::from_millis(5) {
             let ss = if ssthresh > 1e12 { -1.0 } else { ssthresh };
-            writeln!(cwnd_log, "{:.1},{:.0},{:.0},{},{:.2}", clock.elapsed().as_secs_f64() * 1000.0, cwnd, ss, in_flight, srtt).unwrap();
+            let now_ms = clock.elapsed().as_secs_f64() * 1000.0;
+            writeln!(cwnd_log, "{:.1},{:.0},{:.0},{},{:.2}", now_ms, cwnd, ss, in_flight, srtt).unwrap();
+            let qs = if have_rtt { (srtt - min_rtt).max(0.0) } else { 0.0 };
+            ll_q_hist.push((now_ms, qs));
             last_log = Instant::now();
         }
 
-        // Step 8j: give up if nothing valid has arrived for 10 seconds
+        // Step 8k: give up if nothing valid has arrived for 10 seconds
         if last_rx.elapsed().as_secs() >= 10 {
             println!("Stalled: no ACKs for 10 s. Is the receiver running? ({} of {} acked)", chunks_acked_count, total_chunks + 1);
             break;
@@ -275,4 +323,9 @@ fn main() {
         sent_total, retx_total, retx_total as f64 * 100.0 / sent_total as f64, lost_declared, spurious);
     println!("Controller {}: cwnd reductions {}, max cwnd {:.1} packets, final cwnd {:.1} packets",
         cc, reductions, max_cwnd / mss_f, cwnd / mss_f);
+    println!("Classifier verdicts on declared losses: CONGESTION {}, RANDOM {} (queueing delay above {} x minRTT and risen by at least {} ms)",
+        v_cong, v_rand, q_frac, slope_thr_ms);
+    if cc == "losslens" {
+        println!("LossLens cuts: congestion {}, random {}, safety net {}", ev_cong, ev_rand, ll_safety);
+    }
 }
