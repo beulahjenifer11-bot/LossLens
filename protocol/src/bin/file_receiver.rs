@@ -53,7 +53,7 @@ fn main() {
     let mut chunks_got: BTreeSet<u64> = BTreeSet::new(); // distinct stream offsets received (used to decide when the file is complete)
     let mut total_len: u64 = 0;
     let mut fin_pn: Option<u64> = None;
-    let mut ack_pn: u64 = 0;
+    let mut ack_pn: u64 = 0; let mut sack_trunc: u64 = 0; let mut sack_trunc: u64 = 0;
     let mut accepted: u64 = 0;   // DATA packets accepted (duplicates included)
     let mut dropped: u64 = 0;    // packets we threw away on purpose, ground truth label RANDOM
     let mut ce_count: u32 = 0;
@@ -125,7 +125,7 @@ fn main() {
             }
         }
         ranges.push((s, prev));
-        if ranges.len() > 50 { ranges = ranges.split_off(ranges.len() - 50); } // keep newest 50 ranges
+        if ranges.len() > 50 { sack_trunc += 1; ranges = ranges.split_off(ranges.len() - 50); } // keep newest 50 ranges
         let largest = *got.iter().next_back().unwrap();
 
         // Step 5f: encode the ACK frame and send it back
@@ -153,5 +153,5 @@ fn main() {
     file_data.truncate(total_len as usize);
     fs::write(&out_path, &file_data).expect("could not write file");
     println!("Receiver done: {} bytes saved to {}", file_data.len(), out_path);
-    println!("DATA packets accepted {}, packets dropped on purpose (ground truth RANDOM) {}, CE marks {}", accepted, dropped, ce_count);
+    println!("DATA packets accepted {}, packets dropped on purpose (ground truth RANDOM) {}, CE marks {}", accepted, dropped, ce_count); println!("SACK truncations {}", sack_trunc);
 }

@@ -1,4 +1,4 @@
-param([int]$Seeds = 3, [int]$FileMB = 5, [int]$SeedStart = 1, [string]$Tag = "runs", [string]$Controllers = "reno,fixed")
+param([int]$Seeds = 3, [int]$FileMB = 5, [int]$SeedStart = 1, [string]$Tag = "runs", [string]$Controllers = "reno,fixed", [string]$LossRates = "0,0.1,0.5,1,2,5")
 
 # Step 1: stop leftovers, move to the project root, build the release programs
 Get-Process emulator, file_receiver, file_sender -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -26,10 +26,10 @@ $b = New-Object byte[] $size
 $fileHash = (Get-FileHash $testFile).Hash
 
 # Step 4: results table header, one row will be added per run
-Set-Content $csv "controller,loss_pct,seed,hash_ok,seconds,goodput_mbps,srtt_ms,min_rtt_ms,sent,retx,declared,spurious,reductions,max_cwnd_pkts,emu_random,emu_overflow"
+Set-Content $csv "controller,loss_pct,seed,hash_ok,seconds,goodput_mbps,srtt_ms,min_rtt_ms,sent,retx,declared,spurious,reductions,max_cwnd_pkts,emu_random,emu_overflow,emu_forwarded,recv_accepted,sack_trunc"
 
 # Step 5: the experiment grid
-$lossList = 0, 0.1, 0.5, 1, 2, 5
+$lossList = $LossRates.Split(",")
 $total = $Controllers.Split(",").Count * $lossList.Count * $Seeds
 $n = 0
 $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -67,9 +67,9 @@ foreach ($cc in $Controllers.Split(",")) {
             $m3 = [regex]::Match($text, "Packets sent (\d+), retransmissions (\d+) \([\d.]+%\), losses declared (\d+), spurious (\d+)")
             $m4 = [regex]::Match($text, "cwnd reductions (\d+), max cwnd ([\d.]+) packets")
             $m5 = [regex]::Match($emuText, "dropped (\d+) RANDOM\s*\+\s*(\d+) QUEUE_OVERFLOW")
-            $sec = $m1.Groups[1].Value
+            $recvText = [string](Get-Content $recvLog -Raw); $m6 = [regex]::Match($emuText, "forwarded (\d+) DATA/FIN"); $m7 = [regex]::Match($recvText, "accepted (\d+),"); $m8 = [regex]::Match($recvText, "SACK truncations (\d+)"); $sec = $m1.Groups[1].Value
             $gp = $m1.Groups[2].Value
-            $row = "$cc,$loss,$seed,$ok,$sec,$gp,$($m2.Groups[1].Value),$($m2.Groups[2].Value),$($m3.Groups[1].Value),$($m3.Groups[2].Value),$($m3.Groups[3].Value),$($m3.Groups[4].Value),$($m4.Groups[1].Value),$($m4.Groups[2].Value),$($m5.Groups[1].Value),$($m5.Groups[2].Value)"
+            $row = "$cc,$loss,$seed,$ok,$sec,$gp,$($m2.Groups[1].Value),$($m2.Groups[2].Value),$($m3.Groups[1].Value),$($m3.Groups[2].Value),$($m3.Groups[3].Value),$($m3.Groups[4].Value),$($m4.Groups[1].Value),$($m4.Groups[2].Value),$($m5.Groups[1].Value),$($m5.Groups[2].Value),$($m6.Groups[1].Value),$($m7.Groups[1].Value),$($m8.Groups[1].Value)"
             Add-Content $csv $row
 
             # Step 5f: one progress line per run
