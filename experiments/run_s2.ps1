@@ -1,4 +1,4 @@
-param([int]$Seeds = 3, [int]$FileMB = 5, [int]$SeedStart = 1, [string]$Tag = "runs")
+param([int]$Seeds = 3, [int]$FileMB = 5, [int]$SeedStart = 1, [string]$Tag = "runs", [string]$Controllers = "reno,fixed")
 
 # Step 1: stop leftovers, move to the project root, build the release programs
 Get-Process emulator, file_receiver, file_sender -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -30,11 +30,11 @@ Set-Content $csv "controller,loss_pct,seed,hash_ok,seconds,goodput_mbps,srtt_ms,
 
 # Step 5: the experiment grid
 $lossList = 0, 0.1, 0.5, 1, 2, 5
-$total = 2 * $lossList.Count * $Seeds
+$total = $Controllers.Split(",").Count * $lossList.Count * $Seeds
 $n = 0
 $clock = [Diagnostics.Stopwatch]::StartNew()
 
-foreach ($cc in "reno", "fixed") {
+foreach ($cc in $Controllers.Split(",")) {
     foreach ($loss in $lossList) {
         foreach ($seed in $SeedStart..($SeedStart + $Seeds - 1)) {
             $n++

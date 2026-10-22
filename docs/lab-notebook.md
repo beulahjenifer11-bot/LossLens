@@ -45,3 +45,5 @@
 ## 2026-10-21: Step 22 CUBIC added to file_sender as a third controller branch (beta 0.7, C 0.4, TCP-friendly region, fast convergence, slow start unchanged). Test A run done, results to be recorded after checking against the predictions in docs/hypotheses.md.
 
 ## 2026-10-22: Step 22 CUBIC Test A (2 Mbps, buffer 10): emulator dropped 35, sender declared 35, all QUEUE_OVERFLOW (rules: 33 packets, 2 time). cwnd cycled between about 14.4 and 20.5 packets with near-straight ramps (TCP-friendly region). Figure docs/figures/testA_cubic_cwnd.png.
+
+## 2026-10-22: Step 23 CUBIC S2 runs (60 runs, seeds 1 to 10) added to the analysis. Ratios CUBIC / Reno: 1.00, 1.28, 1.06, 0.97, 0.93, 0.87 at 0, 0.1, 0.5, 1, 2, 5 percent loss. Data check: declared minus emulator drops had min 0, max 83, mean 0.48 over 180 runs, which means about 86 extra declared losses nearly all from one run. Being investigated, and the earlier claim of 0 spurious losses is on hold until the run is found.

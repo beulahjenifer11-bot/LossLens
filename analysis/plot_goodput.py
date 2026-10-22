@@ -18,8 +18,11 @@ def main():
     os.makedirs("docs/figures", exist_ok=True)
 
     # Step 2: read the runs table and count problems
-    with open("results/mvp_s2_runs.csv") as f:
-        rows = list(csv.DictReader(f))
+    rows = []
+    for fn in ("results/mvp_s2_runs.csv", "results/mvp_s2_cubic.csv"):
+        if os.path.exists(fn):
+            with open(fn) as f:
+                rows += list(csv.DictReader(f))
     bad_hash = [r for r in rows if r["hash_ok"] != "True"]
     good = [r for r in rows if r["goodput_mbps"] != "" and r["emu_random"] != ""]
     print("Rows read:", len(rows), "| hash failures:", len(bad_hash), "| usable runs:", len(good))
@@ -34,7 +37,7 @@ def main():
     stats = {}
     print()
     print("ctrl   loss%   n    mean Mbps   95% CI            util%  retx%  spurious  cuts")
-    for cc in ("reno", "fixed"):
+    for cc in ("reno", "cubic", "fixed"):
         for p in losses:
             if (cc, p) not in groups:
                 continue
@@ -78,12 +81,13 @@ def main():
             r_m = stats[("reno", p)][0]
             f_m = stats[("fixed", p)][0]
             print("Winner at", p, "% loss:", "reno" if r_m > f_m else "fixed", "(reno", round(r_m, 2), "vs fixed", round(f_m, 2), ")")
+    print(*[f"CUBIC / Reno at {p}% loss: ratio {stats[('cubic', p)][0] / stats[('reno', p)][0]:.2f} ({'within 25%' if abs(stats[('cubic', p)][0] - stats[('reno', p)][0]) <= 0.25 * stats[('reno', p)][0] else 'MORE than 25% apart'})" for p in losses if ('cubic', p) in stats and ('reno', p) in stats], sep="\n")
     diffs = [int(r["declared"]) - (int(r["emu_random"]) + int(r["emu_overflow"])) for r in good]
     print("Losses declared minus emulator drops, per run: min", min(diffs), "max", max(diffs), "mean", round(sum(diffs) / len(diffs), 2))
 
     # Step 7: draw goodput against loss rate (x positions are evenly spaced, labels are the loss rates)
     fig, ax = plt.subplots(figsize=(8, 5))
-    for cc, colour in (("reno", "tab:red"), ("fixed", "tab:blue")):
+    for cc, colour in (("reno", "tab:red"), ("cubic", "tab:green"), ("fixed", "tab:blue")):
         xs, ys, below, above = [], [], [], []
         for i, p in enumerate(losses):
             if (cc, p) in stats:
