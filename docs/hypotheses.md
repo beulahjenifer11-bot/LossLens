@@ -39,3 +39,15 @@ Test A: 2 Mbps, 20 ms one-way, buffer 10, no random loss, 1 MB file, cubic.
 Prediction 1: cwnd falls to about 70 percent of its peak (about 14 to 15 packets from a peak near 21), which is above the pipe size of about 9.4 packets, so the buffer never fully drains. srtt should therefore be about 70 to 90 ms against a min RTT near 45 ms, and goodput should stay near 1.9 Mbps.
 Prediction 2: at this small bandwidth delay product the sender runs in the TCP-friendly region, so the cwnd plot looks like a shallower sawtooth with a roughly straight ramp, not the cubic curve. The cubic shape only shows at large bandwidth delay products.
 Prediction 3 (checked in the next step with the full runner): at 1 percent random loss, cubic goodput is within 20 percent of Reno (2.3 to 3.4 Mbps), because the TCP-friendly region is designed to match Reno at small windows.
+
+### Step 22 outcome (CUBIC Test A, single run)
+Prediction 1 partly confirmed: cwnd troughs sat at about 14.4 packets after peaks of about 20.5, which is 70 percent and well above the pipe size of about 9.4 packets, so the buffer never drained. Goodput and srtt were not checked yet and will come from the full runner.
+Prediction 2 confirmed: the steady ramps are nearly straight, so the sender stayed in the TCP-friendly region. Reading the graphs, CUBIC grew at about 5.6 packets per second against about 13 for Reno (ratio about 0.43), near the 0.53 packets per RTT given by the RFC 9438 formula 3 x (1 - beta) / (1 + beta).
+Ground truth join: 35 packets dropped by the emulator, 35 declared lost by the sender, all QUEUE_OVERFLOW. Rules that fired: packets 33, time 2, no timeout.
+Observation: CUBIC needed three cuts during the start-up overshoot (about 39 to 29 to 20.5 to 14.7 packets) because keeping 70 percent after the first loss still left cwnd above the pipe plus buffer of about 19 packets.
+
+### Step 22 outcome (CUBIC Test A, single run)
+Prediction 1 partly confirmed: cwnd troughs sat at about 14.4 packets after peaks of about 20.5, which is 70 percent and well above the pipe size of about 9.4 packets, so the buffer never drained. Goodput and srtt were not checked yet and will come from the full runner.
+Prediction 2 confirmed: the steady ramps are nearly straight, so the sender stayed in the TCP-friendly region. Reading the graphs, CUBIC grew at about 5.6 packets per second against about 13 for Reno (ratio about 0.43), near the 0.53 packets per RTT given by the RFC 9438 formula 3 x (1 - beta) / (1 + beta).
+Ground truth join: 35 packets dropped by the emulator, 35 declared lost by the sender, all QUEUE_OVERFLOW. Rules that fired: packets 33, time 2, no timeout.
+Observation: CUBIC needed three cuts during the start-up overshoot (about 39 to 29 to 20.5 to 14.7 packets) because keeping 70 percent after the first loss still left cwnd above the pipe plus buffer of about 19 packets.
