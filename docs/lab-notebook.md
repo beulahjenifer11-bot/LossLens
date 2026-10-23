@@ -69,3 +69,5 @@
 ## 2026-10-22: Step 26 threshold tuning runner experiments/tune_losslens.ps1: 12 threshold pairs x 2 scenarios (mixed 2 Mbps buffer 10, fast 20 Mbps buffer 80, both 1 percent random loss) x tuning seeds 101 to 110, 1 MB file. Selection rule and predictions 6 to 8 written in docs/hypotheses.md before running.
 
 ## 2026-10-23: Step 27 tuning grid finished (240 runs in 24.8 min, all hashes true) and thresholds frozen in docs/frozen_thresholds.md (committed and pushed). Prediction 6 held in 5 of 6 cases but the effect is small, Prediction 8 held (13.27 Mbps mean in the fast scenario), Prediction 7 gain clause to be rechecked. The default pair scored about 0.02 above the winner.
+
+## 2026-10-23: Step 27 final. Frozen thresholds q_frac 0.2, slope 1.0 ms (committed before any test-seed run). Tuning did not beat the default pair (0.1, 1.0): winner minus default CI [-0.047, 0.027]. Slope threshold is a strong trade-off knob in the mixed scenario (congestion recall 0.81 to 0.42, random recall about 0.43 to 0.87) and a weak one in the fast scenario. 2 unlabelled declared losses in 240 runs.
