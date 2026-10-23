@@ -10,7 +10,7 @@ fn main() {
     let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|cubic|fixed|losslens] [q_frac] [slope_thr_ms]").clone();
     let server = args.get(2).cloned().unwrap_or("127.0.0.1:9001".to_string());
     let cc = args.get(3).cloned().unwrap_or("reno".to_string());
-    if cc != "reno" && cc != "cubic" && cc != "fixed" && cc != "losslens" { panic!("controller must be reno, cubic, fixed or losslens"); }
+    if cc != "reno" && cc != "cubic" && cc != "fixed" && cc != "losslens" && cc != "llcut09" { panic!("controller must be reno, cubic, fixed, losslens or llcut09"); }
     let q_frac: f64 = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(0.1);        // queueing delay must exceed q_frac x minRTT
     let slope_thr_ms: f64 = args.get(5).map(|s| s.parse().unwrap()).unwrap_or(1.0);  // and must have risen by this many ms over the last RTT
     let data = fs::read(&path).expect("could not read file");
@@ -187,7 +187,7 @@ fn main() {
                     if !chunk_acked[c] { chunk_acked[c] = true; chunks_acked_count += 1; }
 
                     // Step 8d: window growth, only for a packet that was in flight and was sent after the last cut
-                    if (cc == "reno" || cc == "cubic" || cc == "losslens") && was == 0 && p >= recovery_pn {
+                    if (cc == "reno" || cc == "cubic" || cc == "losslens" || cc == "llcut09") && was == 0 && p >= recovery_pn {
                         if cwnd < ssthresh {
                             cwnd += mss_f;                          // slow start (all controllers): +1 packet per ACK
                         } else if cc == "cubic" {
@@ -268,14 +268,14 @@ fn main() {
                 }
 
                 // Step 8i: LossLens reaction, same once-per-RTT rule, but the cut depends on the verdict
-                if cc == "losslens" && p >= recovery_pn {
-                    let mut cong = verdict_cong || timeout_only;       // a timeout is always treated as congestion
+                if (cc == "losslens" || cc == "llcut09") && p >= recovery_pn {
+                    let mut cong = if cc == "llcut09" { timeout_only } else { verdict_cong || timeout_only };       // a timeout is always treated as congestion
                     if cong {
                         rand_streak = 0;
                     } else {
                         rand_streak += 1;
                         if rand_streak == 1 { streak_q0 = q_now; }
-                        if rand_streak >= 3 && q_now > streak_q0 + slope_thr_ms {
+                        if cc == "losslens" && rand_streak >= 3 && q_now > streak_q0 + slope_thr_ms {
                             cong = true;                               // safety net: 3 RANDOM verdicts in a row while the delay keeps climbing
                             ll_safety += 1;
                             rand_streak = 0;
