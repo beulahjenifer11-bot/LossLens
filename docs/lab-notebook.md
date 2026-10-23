@@ -63,3 +63,5 @@
 ## 2026-10-22: Step 25 pure random loss test (fixed window, 20 Mbps, buffer 80, 1 percent random loss, seed 1): 54 drops all RANDOM, 53 of 54 declared losses classified RANDOM, spurious 0, hash identical, goodput 4.61 Mbps. Prediction 5 supported.
 
 ## 2026-10-22: Step 24 and 25 results. Seed 1 runs with the default thresholds: 20 Mbps buffer 80 link LossLens 16.7 Mbps in 2.51 s, mean srtt 48.8 ms, max cwnd 279.5 packets (slow start continues after RANDOM verdicts because ssthresh is untouched). Mixed 2 Mbps link: LossLens 1.91 Mbps, mean srtt 73.2 ms; Reno 1.74 Mbps, mean srtt 61.8 ms. One CONGESTION verdict in the pure random run at 2263 ms, q 8.39 ms, cause unknown.
+
+## 2026-10-22: Step 24 and 25 results. Seed 1 runs with the default thresholds: 20 Mbps buffer 80 link LossLens 16.7 Mbps in 2.51 s, mean srtt 48.8 ms, max cwnd 279.5 packets (slow start continues after RANDOM verdicts because ssthresh is untouched). Mixed 2 Mbps link: LossLens 1.91 Mbps, mean srtt 73.2 ms; Reno 1.74 Mbps, mean srtt 61.8 ms. One CONGESTION verdict in the pure random run at 2263 ms, q 8.39 ms, cause unknown.
