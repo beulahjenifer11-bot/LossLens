@@ -177,3 +177,6 @@ Prediction 16 MISSED on recall: with marking, llecn 0.51 and llfull 0.63 are bel
 Prediction 17 first part HELD: with marking off llecn recall is 0.00 (limit 0.20) and its queueing delay equals llcut09 at 48 ms. llfull matches losslens (30.1 against 31.6 ms). The overflow clause is not judged.
 Prediction 18 not judged, rand_recall not seen yet.
 H4 (RQ4), delay side: without marking the RTT signal carries the load; with marking the ECN variants halve the queueing delay (about 14.4 against 31 ms), which equals the 3 packet mark threshold (about 14.9 ms), at about 2 percent lower goodput. This is a delay result, not a classification result, on one link and one threshold.
+
+### Step 32 data problem, diagnostic output
+In all 80 ablation runs emu_overflow was exactly 6306 (min equals max), rand_recall was 0 in all 8 groups (no RANDOM drop joined to a label, although the runs had 1 percent random loss), and declared overflow losses (for example 75 for losslens in mix1) contradict the emulator count. Goodput and queueing delay come from the sender log and are used; everything that depends on the join with the emulator labels (congestion recall, random recall, overflow) is on hold. Predictions 16, 17 (overflow part) and 18 are not judged. Cause under investigation, candidate: a leftover emulator process from an earlier run.
