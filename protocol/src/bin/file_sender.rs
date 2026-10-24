@@ -10,7 +10,7 @@ fn main() {
     let path = args.get(1).expect("usage: file_sender <file> [receiver_addr] [reno|cubic|fixed|losslens] [q_frac] [slope_thr_ms]").clone();
     let server = args.get(2).cloned().unwrap_or("127.0.0.1:9001".to_string());
     let cc = args.get(3).cloned().unwrap_or("reno".to_string());
-    if cc != "reno" && cc != "cubic" && cc != "fixed" && cc != "losslens" && cc != "llcut09" { panic!("controller must be reno, cubic, fixed, losslens or llcut09"); }
+    if cc != "reno" && cc != "cubic" && cc != "fixed" && cc != "losslens" && cc != "llcut09" && cc != "llecn" && cc != "llfull" { panic!("controller must be reno, cubic, fixed, losslens, llcut09, llecn or llfull"); } let is_ll = cc == "losslens" || cc == "llcut09" || cc == "llecn" || cc == "llfull";
     let q_frac: f64 = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(0.1);        // queueing delay must exceed q_frac x minRTT
     let slope_thr_ms: f64 = args.get(5).map(|s| s.parse().unwrap()).unwrap_or(1.0);  // and must have risen by this many ms over the last RTT
     let data = fs::read(&path).expect("could not read file");
@@ -77,7 +77,8 @@ fn main() {
     let mut v_rand: u64 = 0;                         // declared losses given the verdict RANDOM
     let mut ev_cong: u64 = 0;                        // LossLens cuts decided as congestion
     let mut ev_rand: u64 = 0;                        // LossLens cuts decided as random
-    let mut ll_safety: u64 = 0;                      // times the safety net forced a congestion cut
+    let mut ll_safety: u64 = 0; let mut ce_round: u64 = 0; let mut ce_prev_round: u64 = 0; let mut acked_round: u64 = 0; let mut round_start = Instant::now(); let mut alpha: f64 = 0.0; let mut ecn_cuts: u64 = 0;
+let mut ll_safety: u64 = 0; let mut ce_round: u64 = 0; let mut ce_prev_round: u64 = 0; let mut acked_round: u64 = 0; let mut round_start = Instant::now(); let mut alpha: f64 = 0.0; let mut ecn_cuts: u64 = 0;
 
     // Step 6: log files for later analysis
     let mut cwnd_log = fs::File::create("cwnd_log.csv").expect("cannot create cwnd_log.csv");
@@ -168,7 +169,7 @@ fn main() {
             let delay_us = u32::from_be_bytes(frame[8..12].try_into().unwrap());
             let ce = u32::from_be_bytes(frame[12..16].try_into().unwrap());
             let n = u16::from_be_bytes(frame[16..18].try_into().unwrap()) as usize;
-            if ce > ce_echoed { ce_echoed = ce; }
+            if ce > ce_echoed { ce_round += (ce - ce_echoed) as u64; ce_echoed = ce; }
             if largest as i64 > largest_acked { largest_acked = largest as i64; }
 
             for i in 0..n {
@@ -180,14 +181,14 @@ fn main() {
                     let p = pn as usize;
                     if p >= pkt_state.len() || pkt_state[p] == 1 { continue; }
                     let was = pkt_state[p];
-                    pkt_state[p] = 1;
+                    pkt_state[p] = 1; acked_round += 1;
                     if was == 0 { in_flight -= 1; }
                     if was == 2 { spurious += 1; }
                     let c = pkt_chunk[p];
                     if !chunk_acked[c] { chunk_acked[c] = true; chunks_acked_count += 1; }
 
                     // Step 8d: window growth, only for a packet that was in flight and was sent after the last cut
-                    if (cc == "reno" || cc == "cubic" || cc == "losslens" || cc == "llcut09") && was == 0 && p >= recovery_pn {
+                    if (cc == "reno" || cc == "cubic" || is_ll) && was == 0 && p >= recovery_pn {
                         if cwnd < ssthresh {
                             cwnd += mss_f;                          // slow start (all controllers): +1 packet per ACK
                         } else if cc == "cubic" {
@@ -248,7 +249,9 @@ fn main() {
                     if t <= now_ms - srtt { q_old = q; break; }  // newest sample that is at least one RTT old
                 }
                 let rise = q_now - q_old;
-                let verdict_cong = have_rtt && q_now > q_frac * min_rtt && rise >= slope_thr_ms;
+                let rtt_cong = have_rtt && q_now > q_frac * min_rtt && rise >= slope_thr_ms;
+                let ecn_cong = ce_round > 0 || ce_prev_round > 0;   // a mark in this or the previous round
+                let verdict_cong = if cc == "llecn" { ecn_cong } else if cc == "llfull" { rtt_cong || ecn_cong } else { rtt_cong };
                 if verdict_cong { v_cong += 1; } else { v_rand += 1; }
                 let rule = if by_packets { "packets" } else if by_time { "time" } else { "timeout" };
                 writeln!(loss_log, "{},{:.1},{},{},{:.2},{:.2}", p, now_ms, rule, if verdict_cong { "CONGESTION" } else { "RANDOM" }, q_now, rise).unwrap();
@@ -268,7 +271,7 @@ fn main() {
                 }
 
                 // Step 8i: LossLens reaction, same once-per-RTT rule, but the cut depends on the verdict
-                if (cc == "losslens" || cc == "llcut09") && p >= recovery_pn {
+                if is_ll && p >= recovery_pn {
                     let mut cong = if cc == "llcut09" { timeout_only } else { verdict_cong || timeout_only };       // a timeout is always treated as congestion
                     if cong {
                         rand_streak = 0;
@@ -296,6 +299,20 @@ fn main() {
         }
         if timed_out { last_ack_time = Instant::now(); }
 
+        // ECN round: once per smoothed RTT compute the marked fraction (DCTCP style) and react
+        if have_rtt && acked_round > 0 && round_start.elapsed().as_secs_f64() * 1000.0 >= srtt {
+            let f = (ce_round as f64 / acked_round as f64).min(1.0);
+            alpha = (1.0 - 1.0 / 16.0) * alpha + f / 16.0;
+            if (cc == "llecn" || cc == "llfull") && ce_round > 0 {
+                cwnd = (cwnd * (1.0 - alpha / 2.0)).max(2.0 * mss_f);
+                ssthresh = cwnd;          // the first mark ends slow start
+                ecn_cuts += 1;
+            }
+            ce_prev_round = ce_round;
+            ce_round = 0;
+            acked_round = 0;
+            round_start = Instant::now();
+        }
         // Step 8j: every 5 ms write one cwnd log row and remember the queueing delay for the classifier
         if last_log.elapsed() >= Duration::from_millis(5) {
             let ss = if ssthresh > 1e12 { -1.0 } else { ssthresh };
@@ -313,7 +330,8 @@ fn main() {
         }
     }
 
-    // Step 9: report
+    // Step 9: report 
+    println!("ECN window cuts {}, alpha {:.3}", ecn_cuts, alpha);
     let secs = clock.elapsed().as_secs_f64();
     println!("Done: {} bytes in {:.3} s, goodput {:.2} Mbps", data.len(), secs, data.len() as f64 * 8.0 / secs / 1e6);
     if have_rtt {

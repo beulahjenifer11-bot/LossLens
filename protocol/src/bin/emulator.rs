@@ -18,7 +18,7 @@ fn main() {
     // Step 2: non-blocking socket on port 9100, forwarding to the receiver on port 9001
     let socket = UdpSocket::bind("0.0.0.0:9100").expect("bind failed");
     socket.set_nonblocking(true).unwrap();
-    let receiver_addr: SocketAddr = args.get(6).cloned().unwrap_or("127.0.0.1:9001".to_string()).parse().unwrap();
+    let receiver_addr: SocketAddr = args.get(6).cloned().unwrap_or("127.0.0.1:9001".to_string()).parse().unwrap(); let mark_thr: usize = args.get(7).map(|s| s.parse().unwrap()).unwrap_or(0); let mut marked: u64 = 0;
     println!("Emulator: random loss {}%, one-way delay {} ms (RTT about {} ms), seed {}, link {} Mbps, buffer {} packets", loss_pct, delay_ms, delay_ms * 2, seed, rate_mbps, buffer_pkts);
 
     // Step 3: seeded random generator (xorshift)
@@ -85,6 +85,15 @@ fn main() {
                         writeln!(log, "{},{},QUEUE_OVERFLOW", pn, ptype).unwrap();
                     } else {
                         // Step 6f: room in the buffer, join the queue
+                        let mut data = data;
+                        if mark_thr > 0 && ptype == 0 && bottleneck.len() >= mark_thr {
+                            data[2] |= 0b10;                              // set the CE flag
+                            data[33..37].copy_from_slice(&[0u8; 4]);      // zero the CRC field, then recompute the CRC over the packet
+                            let mut crc: u32 = 0xFFFF_FFFF;
+                            for &b in data.iter() { crc ^= b as u32; for _ in 0..8 { if crc & 1 == 1 { crc = (crc >> 1) ^ 0xEDB8_8320; } else { crc >>= 1; } } }
+                            data[33..37].copy_from_slice(&(!crc).to_be_bytes());
+                            marked += 1;
+                        }
                         bottleneck.push_back((Instant::now(), data));
                         forwarded_data += 1;
                         if bottleneck.len() > max_depth { max_depth = bottleneck.len(); }
@@ -132,6 +141,6 @@ fn main() {
 
     // Step 7: summary
     println!("Emulator done: forwarded {} DATA/FIN, dropped {} RANDOM + {} QUEUE_OVERFLOW (ground truth), forwarded {} ACKs", forwarded_data, dropped_random, dropped_overflow, forwarded_acks);
-    println!("Max queue depth reached: {} of {} packets", max_depth, buffer_pkts);
+    println!("Max queue depth reached: {} of {} packets", max_depth, buffer_pkts); println!("CE marked {} packets (mark threshold {} packets, 0 = off)", marked, mark_thr); println!("CE marked {} packets (mark threshold {} packets, 0 = off)", marked, mark_thr); println!("CE marked {} packets (mark threshold {} packets, 0 = off)", marked, mark_thr); println!("CE marked {} packets (mark threshold {} packets, 0 = off)", marked, mark_thr); println!("CE marked {} packets (mark threshold {} packets, 0 = off)", marked, mark_thr);
     println!("Drop labels saved to emulator_drops.csv");
 }

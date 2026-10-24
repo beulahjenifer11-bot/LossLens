@@ -163,3 +163,9 @@ Evidence for the standing queue reading: the fixed window keeps the queue full (
 
 ### Step 30 outcome (paired statistics, 10 test seeds)
 H3 goodput clause MET on fast1: the LossLens over CUBIC ratio of means has its whole 95 percent CI above 1.5. H3 delay clause MET on cong1: the LossLens over CUBIC queueing delay ratio has its whole 95 percent CI at or below 1.10. Caveats: the two clauses were measured on two different links (20 Mbps with 1 percent random loss, and 2 Mbps with a 10 packet buffer and no random loss), with one buffer size each and 10 seeds. Prediction 13 (clause fails) was a miss. llcut09 had about 58 times more overflow drops than LossLens (ratio CI 56.5 to 59.1, all 10 seeds agree, permutation p 0.0002, the smallest value possible with 10 seeds).
+
+## Step 32 ECN ablation (RQ4, H4), written before running
+Setup: test seeds 1 to 10, 2 Mbps, 40 ms RTT, buffer 10, 1 percent random loss, 5 MB file. Scenario mix1 has no marking, scenario mix1ecn marks packets that join a queue holding at least 3 packets. Controllers: losslens (LL-RTT, frozen thresholds), llecn (LL-ECN), llfull (LL-Full) and llcut09 (control).
+Prediction 16: with marking on, pooled congestion recall of llecn and llfull is at least 0.85 and above losslens in the same scenario, and their overflow drops per run are below losslens.
+Prediction 17: with marking off, llecn has no signal and behaves like llcut09: congestion recall below 0.20 and overflow drops within 25 percent of llcut09, while llfull stays within 15 percent of losslens in overflow drops.
+Prediction 18: with marking on, random recall of llecn is at least 0.80, because marks only appear once the queue holds 3 or more packets.
