@@ -1,4 +1,4 @@
-param([string]$Cc = "reno", [double]$Loss = 0, [int]$Rate = 20, [int]$Buffer = 80, [int]$Seed = 1, [string]$Name = "run", [int]$FileMB = 5)
+param([string]$Cc = "reno", [double]$Loss = 0, [int]$Rate = 20, [int]$Buffer = 80, [int]$Seed = 1, [string]$Name = "run", [int]$FileMB = 5, [string]$Q = "0.2", [string]$Slope = "1.0")
 
 # Step 1: stop leftovers, move to the project root, build, and stop if the build fails
 Get-Process emulator, file_receiver, file_sender -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -33,7 +33,7 @@ Start-Sleep -Milliseconds 500
 
 # Step 4: run the sender inside the scratch folder and keep its output
 Push-Location $scratch
-$out = & $send $testFile "127.0.0.1:9100" $Cc
+$out = & $send $testFile "127.0.0.1:9100" $Cc $Q $Slope $Q $Slope
 Pop-Location
 
 # Step 5: wait for the receiver and emulator to finish by themselves, kill them if they hang
