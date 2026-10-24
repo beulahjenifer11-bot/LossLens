@@ -81,7 +81,7 @@ fn main() {
 
     // Step 6: log files for later analysis
     let mut cwnd_log = fs::File::create("cwnd_log.csv").expect("cannot create cwnd_log.csv");
-    writeln!(cwnd_log, "time_ms,cwnd_bytes,ssthresh_bytes,in_flight_packets,srtt_ms").unwrap();
+    writeln!(cwnd_log, "time_ms,cwnd_bytes,ssthresh_bytes,in_flight_packets,srtt_ms,acked_bytes").unwrap();
     let mut loss_log = fs::File::create("sender_losses.csv").expect("cannot create sender_losses.csv");
     writeln!(loss_log, "packet_number,time_ms,rule,verdict,q_ms,rise_ms").unwrap();
     let mut last_log = Instant::now();
@@ -300,7 +300,7 @@ fn main() {
         if last_log.elapsed() >= Duration::from_millis(5) {
             let ss = if ssthresh > 1e12 { -1.0 } else { ssthresh };
             let now_ms = clock.elapsed().as_secs_f64() * 1000.0;
-            writeln!(cwnd_log, "{:.1},{:.0},{:.0},{},{:.2}", now_ms, cwnd, ss, in_flight, srtt).unwrap();
+            writeln!(cwnd_log, "{:.1},{:.0},{:.0},{},{:.2},{}", now_ms, cwnd, ss, in_flight, srtt, chunks_acked_count * 1200).unwrap();
             let qs = if have_rtt { (srtt - min_rtt).max(0.0) } else { 0.0 };
             ll_q_hist.push((now_ms, qs));
             last_log = Instant::now();

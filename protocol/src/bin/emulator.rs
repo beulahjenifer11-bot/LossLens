@@ -18,7 +18,7 @@ fn main() {
     // Step 2: non-blocking socket on port 9100, forwarding to the receiver on port 9001
     let socket = UdpSocket::bind("0.0.0.0:9100").expect("bind failed");
     socket.set_nonblocking(true).unwrap();
-    let receiver_addr: SocketAddr = "127.0.0.1:9001".parse().unwrap();
+    let receiver_addr: SocketAddr = args.get(6).cloned().unwrap_or("127.0.0.1:9001".to_string()).parse().unwrap();
     println!("Emulator: random loss {}%, one-way delay {} ms (RTT about {} ms), seed {}, link {} Mbps, buffer {} packets", loss_pct, delay_ms, delay_ms * 2, seed, rate_mbps, buffer_pkts);
 
     // Step 3: seeded random generator (xorshift)
