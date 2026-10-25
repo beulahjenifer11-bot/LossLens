@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LossLens results</title>
+<style>
+  body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #0f1420; color: #e8ecf5; }
+  h1 { margin: 0; padding: 14px 18px 2px; font-size: 26px; }
+  .sub { color: #9fb0d0; font-size: 15px; padding: 0 18px 8px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 14px 12px; }
+  nav button, nav a { background: #1f2a44; color: #dbe4ff; border: 0; border-radius: 20px; padding: 8px 14px; font-size: 14px; cursor: pointer; text-decoration: none; }
+  nav button.on { background: #5c7cfa; color: #fff; }
+  section { display: none; padding: 0 16px 30px; max-width: 900px; }
+  section.on { display: block; }
+  h2 { margin: 6px 0 4px; font-size: 22px; }
+  .what { color: #b8c4e0; font-size: 16px; line-height: 1.5; margin: 6px 0 12px; }
+  .box { background: #182033; border-radius: 14px; padding: 14px; margin: 12px 0; }
+  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  .card { flex: 1; min-width: 130px; background: #1f2a44; border-radius: 12px; padding: 10px 12px; }
+  .card b { display: block; font-size: 28px; }
+  .card span { font-size: 13px; color: #b8c4e0; }
+  .line { font-size: 18px; font-weight: 600; background: #243357; border-radius: 12px; padding: 12px 14px; margin: 12px 0; line-height: 1.4; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { border-bottom: 1px solid #2a3550; padding: 7px 6px; text-align: left; vertical-align: top; }
+  .ok { color: #5be38a; font-weight: 700; } .no { color: #ff8a8a; font-weight: 700; } .mid { color: #ffd166; font-weight: 700; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { background: #243357; border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+  .arrow { font-size: 20px; color: #7f8fb0; }
+  ul { line-height: 1.6; color: #c5d0e8; }
+</style>
+</head>
+<body>
+<h1>LossLens: results in plain words</h1>
+<div class="sub">Every number comes from our own experiments: many repeated runs, and every received file checked byte for byte.</div>
+<nav id="nav"></nav>
+<div id="app"></div>
+<script>
+async function main() {
+  // Step 1: load the numbers made by analysis/build_results.py
+  let data;
+  try {
+    data = await (await fetch("results.json?t=" + Date.now(), { cache: "no-store" })).json();
+  } catch (e) {
+    document.getElementById("app").innerHTML = '<div class="box">Could not load results.json. Run analysis/build_results.py first, and open this page through the demo server (serve.py).</div>';
+    return;
+  }
+
+  // Step 2: names, colours and small helpers
+  const colour = { reno: "#ff6b6b", cubic: "#51cf66", fixed: "#4dabf7", losslens: "#b388ff", llcut09: "#adb5bd", llecn: "#ffa94d", llfull: "#38d9a9" };
+  const short = { reno: "Standard|(Reno)", cubic: "Standard|(CUBIC)", fixed: "Fixed|speed", losslens: "LossLens", llcut09: "Never slows|down", llecn: "Router|marks only", llfull: "Delay +|router marks" };
+  const f1 = (x) => (x == null ? "n/a" : x.toFixed(1));
+  const g = (k, cc, m) => (data.scen[k] && data.scen[k].ctrl[cc] ? data.scen[k].ctrl[cc][m] : null);
+  const have = (k) => data.scen[k] && Object.keys(data.scen[k].ctrl).length > 0;
+  const order5 = ["reno", "cubic", "fixed", "losslens", "llcut09"];
+
+  // Step 3: bar chart with whiskers (items: label with | as line break, v, lo, hi, color)
+  const bars = (items, unit) => {
+    const W = 640, H = 300, L = 46, B = 62, T = 22, R = 10;
+    const ymax = Math.max(...items.map(i => (i.hi != null ? i.hi : i.v))) * 1.18 || 1;
+    const Y = (v) => H - B - (H - B - T) * v / ymax;
+    const bw = (W - L - R) / items.length;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:700px">`;
+    for (let k = 0; k <= 4; k++) {
+      s += `<line x1="${L}" x2="${W - R}" y1="${Y(ymax * k / 4)}" y2="${Y(ymax * k / 4)}" stroke="#2a3550"/><text x="${L - 6}" y="${Y(ymax * k / 4) + 4}" fill="#9fb0d0" font-size="11" text-anchor="end">${(ymax * k / 4).toFixed(ymax < 10 ? 1 : 0)}</text>`;
+    }
+    items.forEach((it, i) => {
+      const x = L + i * bw + bw * 0.15, w = bw * 0.7, cx = x + w / 2;
+      s += `<rect x="${x}" y="${Y(it.v)}" width="${w}" height="${Math.max(0, H - B - Y(it.v))}" fill="${it.color}" rx="4"/>`;
+      if (it.lo != null) {
+        s += `<line x1="${cx}" x2="${cx}" y1="${Y(it.lo)}" y2="${Y(it.hi)}" stroke="#fff"/><line x1="${cx - 6}" x2="${cx + 6}" y1="${Y(it.hi)}" y2="${Y(it.hi)}" stroke="#fff"/><line x1="${cx - 6}" x2="${cx + 6}" y1="${Y(it.lo)}" y2="${Y(it.lo)}" stroke="#fff"/>`;
+      }
+      s += `<text x="${cx}" y="${Y(it.hi != null ? it.hi : it.v) - 6}" fill="#fff" font-size="13" font-weight="600" text-anchor="middle">${it.v.toFixed(1)}</text>`;
+      it.label.split("|").forEach((p, j) => { s += `<text x="${cx}" y="${H - B + 16 + j * 14}" fill="#c5d0e8" font-size="11" text-anchor="middle">${p}</text>`; });
+    });
+    return s + `<text x="8" y="12" fill="#9fb0d0" font-size="12">${unit}</text></svg>`;
+  };
+
+  // Step 4: bars for one metric of one scenario, dropped-packet cards, and the line charts
+  const bar5 = (key, metric, order) => {
+    const items = order.filter(cc => g(key, cc, metric)).map(cc => ({ label: short[cc], v: g(key, cc, metric)[0], lo: g(key, cc, metric)[1], hi: g(key, cc, metric)[2], color: colour[cc] }));
+    if (!items.length) return '<div class="what">No data for this test yet.</div>';
+    return bars(items, metric === "goodput" ? "speed in Mbps (average of repeated runs, whiskers = 95% range)" : "waiting time in the queue in ms (average, whiskers = 95% range)");
+  };
+  const cards = (key, order) => {
+    if (!data.scen[key] || !data.scen[key].labels_ok) return '<div class="what">Dropped-packet counts for this test are being re-run.</div>';
+    return '<div class="cards">' + order.filter(cc => g(key, cc, "overflow") != null).map(cc => `<div class="card" style="border-top:4px solid ${colour[cc]}"><b>${Math.round(g(key, cc, "overflow"))}</b><span>${short[cc].replace("|", " ")}: packets dropped because the queue was full (per run)</span></div>`).join("") + "</div>";
+  };
+  const lines = (labels, series) => {
+    const W = 640, H = 320, L = 46, B = 60, T = 14, R = 14, ymax = 20;
+    const X = (i) => L + (W - L - R) * i / (labels.length - 1);
+    const Y = (v) => H - B - (H - B - T) * v / ymax;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:700px">`;
+    for (let k = 0; k <= 4; k++) {
+      s += `<line x1="${L}" x2="${W - R}" y1="${Y(ymax * k / 4)}" y2="${Y(ymax * k / 4)}" stroke="#2a3550"/><text x="${L - 6}" y="${Y(ymax * k / 4) + 4}" fill="#9fb0d0" font-size="11" text-anchor="end">${(ymax * k / 4).toFixed(0)}</text>`;
+    }
+    labels.forEach((l, i) => { s += `<text x="${X(i)}" y="${H - B + 16}" fill="#c5d0e8" font-size="12" text-anchor="middle">${l}%</text>`; });
+    s += `<text x="${(L + W - R) / 2}" y="${H - B + 34}" fill="#9fb0d0" font-size="12" text-anchor="middle">share of packets lost to radio glitches</text><text x="8" y="12" fill="#9fb0d0" font-size="12">speed (Mbps)</text>`;
+    series.forEach((sr, k) => {
+      const pts = sr.ys.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(p => p);
+      s += `<polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="${sr.color}" stroke-width="3"${sr.dash ? ' stroke-dasharray="6 5"' : ""}/>`;
+      if (!sr.dash) pts.forEach(p => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${sr.color}"/>`; });
+      s += `<text x="${L + 6 + k * 150}" y="${H - 6}" fill="${sr.color}" font-size="13" font-weight="600">${sr.name}</text>`;
+    });
+    return s + "</svg>";
+  };
+  const traceSvg = (arr) => {
+    const W = 640, H = 200, L = 40, B = 34, T = 10, R = 10, ymax = Math.ceil(Math.max(...arr));
+    const X = (i) => L + (W - L - R) * i / (arr.length - 1);
+    const Y = (v) => H - B - (H - B - T) * v / ymax;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:700px">`;
+    for (let k = 0; k <= 4; k++) {
+      s += `<line x1="${L}" x2="${W - R}" y1="${Y(ymax * k / 4)}" y2="${Y(ymax * k / 4)}" stroke="#2a3550"/><text x="${L - 6}" y="${Y(ymax * k / 4) + 4}" fill="#9fb0d0" font-size="11" text-anchor="end">${(ymax * k / 4).toFixed(0)}</text>`;
+    }
+    s += `<polyline points="${arr.map((v, i) => X(i) + "," + Y(v)).join(" ")}" fill="none" stroke="#4dabf7" stroke-width="1.5"/>`;
+    s += `<text x="${(L + W - R) / 2}" y="${H - 8}" fill="#9fb0d0" font-size="12" text-anchor="middle">${(arr.length / 10).toFixed(0)} seconds of link capacity, replayed in a loop</text><text x="6" y="12" fill="#9fb0d0" font-size="12">capacity (Mbps)</text>`;
+    return s + "</svg>";
+  };
+
+  // Step 5: the sections, in the order you would present them
+  const secs = {};
+
+  const i1 = data.s2.loss.indexOf(1);
+  const r1 = i1 >= 0 ? data.s2.reno.mean[i1] : null;
+  secs["The problem"] = `<h2>The problem</h2><div class="what">Wireless links (WiFi, mobile data) lose packets because of radio glitches, not only because the network is jammed. A standard sender cannot tell the difference: it halves its speed at every lost packet.</div>` +
+    (r1 == null ? "" : `<div class="box"><div>What the link can carry: <b>20 Mbps</b></div><div style="background:#4dabf7;height:16px;border-radius:8px;width:100%;margin:6px 0 14px"></div><div>What a standard sender (Reno) gets when 1 packet in 100 is lost: <b>${f1(r1)} Mbps</b> (${(r1 / 20 * 100).toFixed(0)}% of the link)</div><div style="background:#ff6b6b;height:16px;border-radius:8px;width:${Math.max(2, r1 / 20 * 100)}%;margin:6px 0"></div></div>`) +
+    (data.s2.loss.length > 1 ? `<div class="box">${lines(data.s2.loss, [
+      { name: "Standard (Reno)", color: colour.reno, ys: data.s2.reno.mean },
+      { name: "Standard (CUBIC)", color: colour.cubic, ys: data.s2.cubic.mean },
+      { name: "Fixed speed", color: colour.fixed, ys: data.s2.fixed.mean },
+      { name: "Textbook formula", color: "#ffffff", dash: true, ys: data.s2.mathis }])}</div>
+    <div class="what">Red and green: standard senders collapse as more packets are lost, and the red line follows the textbook formula, which shows our code is behaving correctly. Blue: a sender that never adapts stays at about ${f1(data.s2.fixed.mean[0])} Mbps whatever the loss, but it can never use the whole link.</div>` : "");
+
+  secs["How LossLens works"] = `<h2>How LossLens works</h2><div class="what">LossLens watches how long packets wait in the queue (the round trip time). On a jammed link that waiting time grows. On a link with radio glitches it does not.</div>
+    <div class="box"><div class="flow"><div class="step">A packet is lost</div><div class="arrow">&#8594;</div><div class="step">Is the waiting time rising?</div></div>
+    <div class="flow" style="margin-top:12px"><div class="step" style="background:#5a2a2a">YES: the queue is filling, so it is congestion. Slow down by 30%</div><div class="step" style="background:#1f4d3a">NO: it was a radio glitch. Slow down by only 10%</div></div></div>
+    <div class="what">Safety net: if it calls three losses in a row radio glitches while the waiting time keeps growing, it slows down fully the next time. Two optional extras were also built: a router can mark packets as getting busy (ECN), and LossLens can listen to those marks too.</div>`;
+
+  if (have("fast1")) {
+    const L = g("fast1", "losslens", "goodput"), C = g("fast1", "cubic", "goodput");
+    secs["WiFi with radio loss"] = `<h2>A WiFi-like link</h2><div class="what">A 20 Mbps link where 1 packet in 100 is lost to radio glitches. Each sender sent a 5 MB file, repeated ${g("fast1", "reno", "n") || ""} times.</div><div class="box">${bar5("fast1", "goodput", order5)}</div>` +
+      (L && C ? `<div class="line">LossLens averaged ${f1(L[0])} Mbps, ${(L[0] / C[0]).toFixed(1)} times the speed of CUBIC (${f1(C[0])} Mbps).</div>` : "") +
+      cards("fast1", order5) +
+      `<div class="what">The control that never slows down is a little faster on its own, because ignoring congestion costs nothing when nobody else shares the link. The price is paid in queue waiting time and lost packets: see the next tab.</div>`;
+  }
+
+  if (have("cong1")) {
+    const L = g("cong1", "losslens", "qdelay"), C = g("cong1", "cubic", "qdelay"), N = g("cong1", "llcut09", "qdelay");
+    secs["Jammed link"] = `<h2>A jammed link</h2><div class="what">A 2 Mbps link with a small queue and no radio loss, so every loss is real congestion. All senders reach the same speed, so what matters is how long packets wait in the queue and how many are dropped.</div><div class="box">${bar5("cong1", "qdelay", order5)}</div>` +
+      (L && C && N ? `<div class="line">LossLens waits ${f1(L[0])} ms in the queue, about the same as CUBIC (${f1(C[0])} ms). The sender that never slows down waits ${f1(N[0])} ms.</div>` : "") +
+      cards("cong1", order5);
+  }
+
+  if (have("mix1") && have("mix1ecn")) {
+    const o4 = ["losslens", "llecn", "llfull", "llcut09"];
+    const e = g("mix1ecn", "losslens", "qdelay"), b = g("mix1ecn", "llecn", "qdelay");
+    const rec = (k) => !data.scen[k].labels_ok ? '<div class="what">Accuracy numbers for this test are being re-run.</div>' :
+      "<table><tr><th>Sender</th><th>Congestion drops recognised</th><th>Radio-glitch drops recognised</th></tr>" +
+      o4.filter(cc => g(k, cc, "cong_rec") != null || g(k, cc, "rand_rec") != null).map(cc => `<tr><td>${short[cc].replace("|", " ")}</td><td>${g(k, cc, "cong_rec") == null ? "n/a" : Math.round(g(k, cc, "cong_rec") * 100) + "%"}</td><td>${g(k, cc, "rand_rec") == null ? "n/a" : Math.round(g(k, cc, "rand_rec") * 100) + "%"}</td></tr>`).join("") + "</table>";
+    secs["Router marks (ECN)"] = `<h2>Router marks (ECN)</h2><div class="what">A router can set a flag on a packet when its queue builds up, instead of dropping it, like a getting busy light. We tested LossLens using delay only, router marks only, or both. Same link in both tests: 2 Mbps, small queue, 1% radio loss.</div>
+      <div class="box"><b>Without router marks</b>${bar5("mix1", "qdelay", o4)}</div>
+      <div class="box"><b>With router marks</b>${bar5("mix1ecn", "qdelay", o4)}</div>` +
+      (e && b ? `<div class="line">${(1 - b[0] / e[0]) > 0.2 ? "Router marks cut the queue waiting time from " + f1(e[0]) + " ms (delay only) to " + f1(b[0]) + " ms (marks only)." : "Router marks made little difference to the queue waiting time here (" + f1(e[0]) + " ms with delay only, " + f1(b[0]) + " ms with marks only)."}</div>` : "") +
+      `<div class="box"><b>With router marks: how often the cause was recognised</b>${rec("mix1ecn")}</div>`;
+  }
+
+  if (have("trace1") && data.trace.length > 1) {
+    const m = data.trace.reduce((a, c) => a + c, 0) / data.trace.length;
+    const L = g("trace1", "losslens", "goodput"), R = g("trace1", "reno", "goodput"), C = g("trace1", "cubic", "goodput");
+    secs["Changing WiFi"] = `<h2>A link whose speed keeps changing</h2><div class="what">Real WiFi speed changes constantly. This test replays a synthetic WiFi-like capacity pattern that changes every 0.1 second, with 1% radio loss as well.</div><div class="box">${traceSvg(data.trace)}</div><div class="box">${bar5("trace1", "goodput", order5)}</div>` +
+      (L && R && C ? `<div class="line">Average capacity ${f1(m)} Mbps. LossLens averaged ${f1(L[0])} Mbps (${(L[0] / m * 100).toFixed(0)}% of it), Reno ${f1(R[0])} Mbps, CUBIC ${f1(C[0])} Mbps.</div>` : "") +
+      cards("trace1", order5);
+  }
+
+  const rows = [
+    ["A standard sender (Reno) uses under 25% of the link at 1% radio loss", "ok", "Supported: about 14%"],
+    ["Reno matches the textbook formula within a factor of 2", "ok", "Supported at every loss rate"],
+    ["LossLens is at least 1.5 times faster than CUBIC at 1% loss", "ok", "Met: about 5 times on the WiFi test"],
+    ["LossLens keeps queue waiting time within 10% of CUBIC on a jammed link", "ok", "Met"],
+    ["LossLens is faster than a sender that never slows down", "no", "Not true: that control is about 22% faster alone. LossLens instead causes about 30 times fewer drops and about 80% less queue waiting on the WiFi test"],
+    ["Delay alone recognises radio glitches at least 85% of the time", "mid", "Mixed: about 91% on the WiFi link, but only about 60% of real congestion drops are recognised on the jammed link"],
+    ["Both causes can be told apart when they happen together", "mid", "Hard: in the mixed tests, improving one recognition rate lowered the other"]
+  ];
+  secs["Can you trust it?"] = `<h2>Can you trust it?</h2><div class="cards"><div class="card"><b>${data.runs_total}</b><span>experiment runs shown here</span></div><div class="card"><b>${data.runs_total ? Math.round(data.hash_ok / data.runs_total * 100) : 0}%</b><span>of runs delivered the file byte for byte identical</span></div><div class="card"><b>10</b><span>repeated runs per setting, each with a different random seed</span></div></div>
+    <div class="what">We wrote every prediction down before running the test, tuned LossLens on separate seeds and then froze its settings, and we report the misses too.</div>
+    <div class="box"><table><tr><th>Prediction</th><th></th><th>Outcome</th></tr>${rows.map(r => `<tr><td>${r[0]}</td><td class="${r[1]}">${r[1] === "ok" ? "HELD" : r[1] === "no" ? "MISSED" : "PARTLY"}</td><td>${r[2]}</td></tr>`).join("")}</table></div>
+    <div class="box"><b>Honest limits</b><ul><li>Radio loss is created by software, not by a real radio. The packets do cross a real network in the hardware demo.</li><li>One sender at a time on one bottleneck link. Competing flows were not measured.</li><li>The capacity pattern is synthetic, not recorded from a real network.</li><li>Reno and CUBIC are our own simplified versions, and a BBR-style sender was not built.</li><li>LossLens varies from run to run: some runs were much slower than others.</li><li>Delay alone misses some congestion, which is why the router marks were added.</li></ul></div>`;
+
+  // Step 6: build the tabs and switch between them
+  const nav = document.getElementById("nav"), app = document.getElementById("app");
+  Object.keys(secs).forEach((name, i) => {
+    const b = document.createElement("button");
+    b.textContent = name;
+    const s = document.createElement("section");
+    s.innerHTML = secs[name];
+    if (i === 0) { b.className = "on"; s.className = "on"; }
+    b.onclick = () => {
+      nav.querySelectorAll("button").forEach(x => { x.className = ""; });
+      app.querySelectorAll("section").forEach(x => { x.className = ""; });
+      b.className = "on";
+      s.className = "on";
+      window.scrollTo(0, 0);
+    };
+    nav.appendChild(b);
+    app.appendChild(s);
+  });
+  const live = document.createElement("a");
+  live.href = "dashboard.html";
+  live.textContent = "Live demo";
+  nav.appendChild(live);
+}
+main();
+</script>
+</body>
+</html>
