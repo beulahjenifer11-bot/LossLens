@@ -14,7 +14,7 @@ def main():
     n_perm = 5000     # permutation shuffles
     controllers = ["reno", "cubic", "fixed", "losslens", "llcut09"]
     colours = {"reno": "tab:red", "cubic": "tab:green", "fixed": "tab:blue", "losslens": "tab:purple", "llcut09": "tab:gray"}
-    files = {"fast1": "results/final_fast1.csv", "cong1": "results/final_cong1.csv"}
+    files = {"fast1": "results/final_fast1.csv", "cong1": "results/final_cong1.csv", "trace1": "results/final_trace1.csv"}
     metrics = [("goodput", "goodput (Mbps)"), ("qdelay", "queueing delay (ms)"), ("overflow", "overflow drops per run")]
     mean = lambda v: sum(v) / len(v)
     os.makedirs("docs/figures", exist_ok=True)

@@ -180,3 +180,9 @@ H4 (RQ4), delay side: without marking the RTT signal carries the load; with mark
 
 ### Step 32 data problem, diagnostic output
 In all 80 ablation runs emu_overflow was exactly 6306 (min equals max), rand_recall was 0 in all 8 groups (no RANDOM drop joined to a label, although the runs had 1 percent random loss), and declared overflow losses (for example 75 for losslens in mix1) contradict the emulator count. Goodput and queueing delay come from the sender log and are used; everything that depends on the join with the emulator labels (congestion recall, random recall, overflow) is on hold. Predictions 16, 17 (overflow part) and 18 are not judged. Cause under investigation, candidate: a leftover emulator process from an earlier run.
+
+## Step 33 trace driven link (S6), written before running
+Setup: a synthetic WiFi-like capacity trace (docs/data/trace_wifi.csv, 100 ms intervals, replayed in a loop, rate sampled when each packet starts transmission), 40 ms RTT, buffer 40 packets, 1 percent random loss, 5 MB file, test seeds 1 to 10, controllers reno, cubic, fixed, losslens (frozen thresholds) and llcut09, no marking.
+Prediction 19: LossLens mean goodput is at least 1.5 times CUBIC on this link.
+Prediction 20: LossLens uses 50 to 95 percent of the mean trace capacity, while reno and cubic use less than 50 percent.
+Prediction 21: llcut09 has more queueing delay than LossLens, as on the pure congestion link.

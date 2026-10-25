@@ -1,4 +1,4 @@
-param([string]$Name = "fast1", [double]$Loss = 1, [int]$Rate = 20, [int]$Buffer = 80, [string]$Controllers = "reno,cubic,fixed,losslens,llcut09", [int]$Seeds = 10, [int]$SeedStart = 1, [int]$FileMB = 5, [int]$Mark = 0)
+param([string]$Name = "fast1", [double]$Loss = 1, [int]$Rate = 20, [int]$Buffer = 80, [string]$Controllers = "reno,cubic,fixed,losslens,llcut09", [int]$Seeds = 10, [int]$SeedStart = 1, [int]$FileMB = 5, [int]$Mark = 0, [string]$Trace = "none")
 
 # Step 1: stop leftovers, move to the project root, build, stop if the build fails
 Get-Process emulator, file_receiver, file_sender -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -46,7 +46,7 @@ foreach ($seed in $SeedStart..($SeedStart + $Seeds - 1)) {
         # Step 5a: start the receiver and the emulator (emulator args: loss percent, delay ms, seed, Mbps, buffer)
         Remove-Item $recvFile, $emuLog, (Join-Path $scratch "emulator_drops.csv"), (Join-Path $scratch "sender_losses.csv"), (Join-Path $scratch "cwnd_log.csv") -ErrorAction SilentlyContinue
         $pr = Start-Process -FilePath $recv -ArgumentList "$recvFile 0" -WorkingDirectory $scratch -PassThru -NoNewWindow -RedirectStandardOutput $recvLog
-        $pe = Start-Process -FilePath $emu -ArgumentList "$Loss 20 $seed $Rate $Buffer 127.0.0.1:9001 $Mark" -WorkingDirectory $scratch -PassThru -NoNewWindow -RedirectStandardOutput $emuLog
+        $pe = Start-Process -FilePath $emu -ArgumentList "$Loss 20 $seed $Rate $Buffer 127.0.0.1:9001 $Mark $Trace" -WorkingDirectory $scratch -PassThru -NoNewWindow -RedirectStandardOutput $emuLog
         Start-Sleep -Milliseconds 500; Write-Host ("emulator running: {0}, emu log exists: {1}, drops file exists: {2}" -f (-not $pe.HasExited), (Test-Path $emuLog), (Test-Path (Join-Path $scratch "emulator_drops.csv")))
 
         # Step 5b: run the sender with the frozen thresholds (the shadow classifier uses them for every controller)
@@ -101,3 +101,4 @@ foreach ($seed in $SeedStart..($SeedStart + $Seeds - 1)) {
 # Step 6: done
 Write-Host ""
 Write-Host "Finished $total runs in $([math]::Round($clock.Elapsed.TotalMinutes, 1)) minutes. Table saved to results\final_$Name.csv"
+
