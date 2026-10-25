@@ -186,3 +186,7 @@ Setup: a synthetic WiFi-like capacity trace (docs/data/trace_wifi.csv, 100 ms in
 Prediction 19: LossLens mean goodput is at least 1.5 times CUBIC on this link.
 Prediction 20: LossLens uses 50 to 95 percent of the mean trace capacity, while reno and cubic use less than 50 percent.
 Prediction 21: llcut09 has more queueing delay than LossLens, as on the pure congestion link.
+
+### Step 33 outcome, partial (trace1, test seeds 1 to 10, 50 runs, all hashes true)
+Mean goodput Mbps: reno 2.69, cubic 2.62, fixed 4.51, losslens 9.14, llcut09 11.05. Overflow drops per run: reno 5.2, cubic 6.3, fixed 0, losslens 81.3, llcut09 3621.1. Prediction 19 HELD on the means: LossLens is 3.5 times CUBIC, above the 1.5 required (intervals not yet read).
+Method problem found: every run replays the trace from its first interval, so a run covers only its first few seconds (about 4 s for LossLens, about 16 s for Reno) and sees the early part of the pattern, which starts in the good state. Comparing goodput with the mean of the whole 60 s trace is therefore wrong, so Prediction 20 is judged using utilisation against the capacity available during each run. Prediction 21 is judged from the queueing delay shown on the page. llcut09 is again faster than LossLens alone (11.05 against 9.14 Mbps).

@@ -22,7 +22,7 @@
   .stats b { color: #fff; }
   .ticker { margin-top: 8px; font-size: 13px; line-height: 1.5; color: #c5d0e8; min-height: 100px; }
   #score { margin: 0 14px 18px; padding: 14px; background: #1f2a44; border-radius: 14px; font-size: 20px; line-height: 1.5; display: none; }
-</style>
+  body{font-size:20px} h1{font-size:40px} #banner{font-size:24px} .legend{font-size:19px} .head{font-size:30px} .badge{font-size:18px} .speed{font-size:84px} .speed small{font-size:26px} .stats{font-size:21px} .ticker{font-size:19px} #score{font-size:30px} canvas{height:260px}</style>
 </head>
 <body>
 <h1>LossLens live demo</h1><div style="padding:0 18px 6px"><a href="results.html" style="color:#8ab4ff">See all results</a></div>
@@ -148,7 +148,7 @@ function main() {
       rows.forEach((r, k) => { if (k === 0) g.moveTo(X(r.t), Y(r.cwnd)); else g.lineTo(X(r.t), Y(r.cwnd)); });
       g.stroke();
       g.fillStyle = "#7f8fb0";
-      g.font = "11px Segoe UI, Arial";
+      g.font = "16px Segoe UI, Arial";
       g.fillText("packets allowed in flight (top = " + Math.round(ymax) + ")", 8, 14);
       g.fillText("time: " + tmax.toFixed(0) + " s", W - 70, H - 4);
     }
@@ -173,3 +173,5 @@ main();
 </script>
 </body>
 </html>
+
+
