@@ -18,7 +18,7 @@ fn main() {
     // Step 2: non-blocking socket on port 9100, forwarding to the receiver on port 9001
     let socket = UdpSocket::bind("0.0.0.0:9100").expect("bind failed");
     socket.set_nonblocking(true).unwrap();
-    let receiver_addr: SocketAddr = args.get(6).cloned().unwrap_or("127.0.0.1:9001".to_string()).parse().unwrap(); let mark_thr: usize = args.get(7).map(|s| s.parse().unwrap()).unwrap_or(0); let mut marked: u64 = 0;
+    let receiver_addr: SocketAddr = args.get(6).cloned().unwrap_or("127.0.0.1:9001".to_string()).parse().unwrap(); let mark_thr: usize = args.get(7).map(|s| s.parse().unwrap()).unwrap_or(0); let mut marked: u64 = 0; let trace: Vec<f64> = match args.get(8) { Some(p) if p.as_str() != "none" => std::fs::read_to_string(p).expect("cannot read trace").lines().skip(1).filter_map(|l| l.trim().parse::<f64>().ok()).collect(), _ => Vec::new() }; let mut trace_t0: Option<Instant> = None; println!("Trace-driven: {} intervals of 100 ms (0 = off)", trace.len());
     println!("Emulator: random loss {}%, one-way delay {} ms (RTT about {} ms), seed {}, link {} Mbps, buffer {} packets", loss_pct, delay_ms, delay_ms * 2, seed, rate_mbps, buffer_pkts);
 
     // Step 3: seeded random generator (xorshift)
@@ -55,7 +55,7 @@ fn main() {
     loop {
         // Step 6a: take one packet from the socket if one is waiting
         if let Ok((len, src)) = socket.recv_from(&mut buf) {
-            started = true;
+            started = true; if trace_t0.is_none() { trace_t0 = Some(Instant::now()); }
             last_activity = Instant::now();
             if len >= 37 {
                 let data = buf[..len].to_vec();
@@ -107,7 +107,7 @@ fn main() {
         if serving.is_none() {
             if let Some((arrived, bytes)) = bottleneck.pop_front() {
                 let start = if arrived > last_finish { arrived } else { last_finish };
-                let tx = Duration::from_secs_f64(bytes.len() as f64 * 8.0 / rate_bps);
+                let cur_rate = if trace.is_empty() { rate_bps } else { trace[((trace_t0.unwrap().elapsed().as_millis() / 100) as usize) % trace.len()].max(0.1) * 1e6 }; let tx = Duration::from_secs_f64(bytes.len() as f64 * 8.0 / cur_rate);
                 serving = Some((start + tx, bytes));
             }
         }
