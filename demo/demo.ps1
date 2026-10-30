@@ -26,6 +26,14 @@ if ($Part -eq 1) {
     $query = "left=p2_llcut09&llabel=Never%20slows%20down%20(control)&right=p2_losslens&rlabel=LossLens&title=Link%3A%202%20Mbps%2C%20small%20queue%2C%20no%20random%20loss%20(the%20link%20really%20is%20congested)"
 }
 
+$trace = "none"
+if ($Part -eq 3) {
+    $runs = @(@{ name = "p3_reno"; cc = "reno" }, @{ name = "p3_losslens"; cc = "losslens" })
+    $loss = 1; $rate = 20; $buffer = 40
+    $trace = Join-Path $root "results\trace_wifi.csv"
+    $query = "left=p3_reno&llabel=Standard%20sender%20(Reno)&right=p3_losslens&rlabel=LossLens&title=" + [uri]::EscapeDataString("Link: WiFi-like capacity that changes every 0.1 s (replayed from a trace), 40 ms round trip, 1% random loss")
+}
+
 # Step 4: the same seeded 5 MB test file as the experiments
 $demoRoot = Join-Path $root "results\demo"
 New-Item -ItemType Directory $demoRoot -Force | Out-Null
@@ -45,6 +53,7 @@ Write-Host "On the phone open:   http://${ip}:8000/demo/dashboard.html?$query"
 Write-Host "Receiver address in use: $ReceiverIp (127.0.0.1 means one-laptop rehearsal mode)"
 Write-Host ""
 
+foreach ($x in $runs) { Remove-Item (Join-Path $demoRoot $x.name) -Recurse -Force -ErrorAction SilentlyContinue }
 # Step 6: run each sender in turn. Same link, same seed, so both see the same drops
 foreach ($r in $runs) {
     $dir = Join-Path $demoRoot $r.name
@@ -59,7 +68,7 @@ foreach ($r in $runs) {
     }
 
     # Step 6b: the emulator (args: loss percent, delay ms, seed, Mbps, buffer, receiver address), its drop labels go into this run's folder
-    $pe = Start-Process -FilePath $emu -ArgumentList "$loss 20 $Seed $rate $buffer ${ReceiverIp}:9001" -WorkingDirectory $dir -PassThru -NoNewWindow -RedirectStandardOutput "$dir\emu_out.txt"
+    $pe = Start-Process -FilePath $emu -ArgumentList "$loss 20 $Seed $rate $buffer ${ReceiverIp}:9001 0 $trace" -WorkingDirectory $dir -PassThru -NoNewWindow -RedirectStandardOutput "$dir\emu_out.txt"
     Start-Sleep -Milliseconds 700
 
     # Step 6c: the sender, its logs go into this run's folder
@@ -80,3 +89,5 @@ foreach ($r in $runs) {
 }
 Write-Host ""
 Write-Host "Both runs finished. The scoreboard is on the dashboard."
+
+
