@@ -50,7 +50,7 @@ def main():
     # Step 4: the five scenario files, one block per controller
     files = {"fast1": "final_fast1.csv", "cong1": "final_cong1.csv", "trace1": "final_trace1.csv", "mix1": "final_mix1.csv", "mix1ecn": "final_mix1ecn.csv"}
     scen = {}
-    runs_total = len(s2_rows)
+    runs_total = len(s2_rows); trace_vals = [float(r["mbps"]) for r in read("trace_wifi.csv")]; trace_vals = [float(r["mbps"]) for r in read("trace_wifi.csv")]
     hash_total = sum(1 for r in s2_rows if r["hash_ok"] == "True")
     for key, fname in files.items():
         rows = read(fname)
@@ -73,7 +73,7 @@ def main():
                 "qdelay": ci([float(r["mean_srtt_ms"]) - float(r["min_rtt_ms"]) for r in g]),
                 "overflow": round(mean(ovf), 1) if labels_ok and ovf else None,
                 "cong_rec": round(tp / (tp + fnn), 3) if labels_ok and tp + fnn > 0 else None,
-                "rand_rec": round(tn / (tn + fp), 3) if labels_ok and tn + fp > 0 else None,
+                "rand_rec": round(tn / (tn + fp), 3) if labels_ok and tn + fp > 0 else None, "util": (ci([float(r["goodput_mbps"]) / max(0.1, mean([trace_vals[i % len(trace_vals)] for i in range(max(1, int(float(r["seconds"]) * 10)))])) for r in g]) if key == "trace1" and trace_vals else None), "util": (ci([float(r["goodput_mbps"]) / max(0.1, mean([trace_vals[i % len(trace_vals)] for i in range(max(1, int(float(r["seconds"]) * 10)))])) for r in g]) if key == "trace1" and trace_vals else None),
             }
         scen[key] = {"labels_ok": labels_ok, "ctrl": ctrl}
 
